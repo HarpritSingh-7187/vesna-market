@@ -1,5 +1,17 @@
 extends CharacterBody3D
 
+# --- BEGIN: configurazione scene-agnostic
+@export var nav_region_path: NodePath = NodePath("/root/Root/NavigationRegion3D")
+@export var markers_path: NodePath = NodePath("/root/Root/NavigationRegion3D/Markers")
+@export var regions_path: NodePath = NodePath("/root/Root/NavigationRegion3D/Regions")
+@export var doors_path: NodePath = NodePath("/root/Root/NavigationRegion3D/Doors")
+
+@onready var nav_region_node := get_node_or_null(nav_region_path)
+@onready var markers_node := get_node_or_null(markers_path)
+@onready var regions_node := get_node_or_null(regions_path)
+@onready var doors_node := get_node_or_null(doors_path)
+# --- END
+
 const SPEED = 10.0
 const ACCELERATION = 8.0
 const JUMP_VELOCITY = 4.5
@@ -24,14 +36,17 @@ var target_movement : String = "empty"
 @export var separation_weight: float = 5.0   # peso della forza di separazione
 
 func _ready() -> void:
-	if tcp_server.listen( PORT ) != OK:
-		push_error( "Unable to start the srver" )
-		set_process( false )
-	for region in get_node( "/root/Root/NavigationRegion3D/Regions").get_children():
+	# if tcp_server.listen( PORT ) != OK:
+		# push_error( "Unable to start the srver" )
+		# set_process( false )
+	for region in get_node(regions_node).get_children():
 		region.connect( "body_entered", func( body) : _on_area_body_entered( region.name, body ) )
-	for door in get_node("/root/Root/NavigationRegion3D/Doors").get_children():
+	for door in get_node(doors_node).get_children():
 		door.get_node("Area3D").connect( "body_entered", func( body) : _on_area_body_entered( door.name, body ) )
 	play_idle()
+	print("markers_node:", markers_node)
+	print("regions_node:", regions_node)
+	print("doors_node:", doors_node)
 	
 func _process(delta: float) -> void:
 	while tcp_server.is_connection_available():
@@ -125,11 +140,11 @@ func manage( intention : Dictionary ) -> void:
 			release( art_name )
 
 func walk( target, id ):
-	var target_region = get_node_or_null("/root/Root/NavigationRegion3D/Markers/" + target )
+	var target_region = markers_node ? markers_node.get_node_or_null(target) : get_node_or_null(markers_path + target)
 	if target_region == null:
-		target_region = get_node_or_null("/root/Root/NavigationRegion3D/Regions/" + target )
+		target_region = regions_node ? regions_node.get_node_or_null(target) : get_node_or_null(regions_path + target)
 	if target_region == null:
-		target_region = get_node_or_null("/root/Root/NavigationRegion3D/Doors/" + target )
+		target_region = markers_node ? doors_node.get_node_or_null(target) : get_node_or_null(doors_path + target)
 	navigator.set_target_position( target_region.global_position )
 	target_movement = target
 	play_run()
