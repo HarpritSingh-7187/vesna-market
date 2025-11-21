@@ -14,10 +14,10 @@ extends CharacterBody3D
 @export var desired_separation: float = 3.0  # distanza minima desiderata
 @export var separation_weight: float = 5.0   # peso della forza di separazione
 
-@onready var nav_region_node := get_node_or_null(nav_region_path)
-@onready var markers_node := get_node_or_null(markers_path)
-@onready var regions_node := get_node_or_null(regions_path)
-@onready var doors_node := get_node_or_null(doors_path)
+var nav_region_node = null
+var markers_node = null
+var regions_node = null
+var doors_node = null
 
 var navigator: NavigationAgent3D = null
 var jump_anim = null
@@ -45,6 +45,12 @@ func _ready() -> void:
 	# if tcp_server.listen( PORT ) != OK:
 		# push_error( "Unable to start the srver" )
 		# set_process( false )
+	# Resolve region/marker/doors nodes from exported NodePaths (safe)
+	nav_region_node = get_node_or_null(nav_region_path)
+	markers_node = get_node_or_null(markers_path)
+	regions_node = get_node_or_null(regions_path)
+	doors_node = get_node_or_null(doors_path)
+
 	if regions_node:
 		for region in regions_node.get_children():
 			region.connect( "body_entered", func( body) : _on_area_body_entered( region.name, body ) )
@@ -293,3 +299,4 @@ func play_run() -> void:
 		idle_anim.stop()
 	if run_anim:
 		run_anim.play( "Root|Run" )
+
