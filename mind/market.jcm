@@ -1,0 +1,10 @@
+mas market {
+    
+    agent shopper:playgrounds/market/shopper.asl {
+        beliefs:    address( localhost )
+                    port( 9080 )
+        goals:      start
+        ag-class:   vesna.VesnaAgent
+    }
+
+}
