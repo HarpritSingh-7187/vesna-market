@@ -6,10 +6,23 @@ extends CharacterBody3D
 @export var regions_path: NodePath = NodePath("/root/Root/NavigationRegion3D/Regions")
 @export var doors_path: NodePath = NodePath("/root/Root/NavigationRegion3D/Doors")
 
+@export var navigator_path: NodePath = NodePath("NavigationAgent3D")
+@export var jump_anim_path: NodePath = NodePath("Body/Jump")
+@export var idle_anim_path: NodePath = NodePath("Body/Idle")
+@export var run_anim_path: NodePath = NodePath("Body/Run")
+
+@export var desired_separation: float = 3.0  # distanza minima desiderata
+@export var separation_weight: float = 5.0   # peso della forza di separazione
+
 @onready var nav_region_node := get_node_or_null(nav_region_path)
 @onready var markers_node := get_node_or_null(markers_path)
 @onready var regions_node := get_node_or_null(regions_path)
 @onready var doors_node := get_node_or_null(doors_path)
+
+var navigator: NavigationAgent3D = null
+var jump_anim = null
+var idle_anim = null
+var run_anim = null
 # --- END
 
 const SPEED = 10.0
@@ -27,13 +40,6 @@ var end_communication = true
 
 var target_movement : String = "empty"
 
-@onready var navigator : NavigationAgent3D = $NavigationAgent3D
-@onready var jump_anim = $Body/Jump
-@onready var idle_anim = $Body/Idle
-@onready var run_anim = $Body/Run
-
-@export var desired_separation: float = 3.0  # distanza minima desiderata
-@export var separation_weight: float = 5.0   # peso della forza di separazione
 
 func _ready() -> void:
 	# if tcp_server.listen( PORT ) != OK:
@@ -63,6 +69,14 @@ func _ready() -> void:
 				if area:
 					area.connect( "body_entered", func( body) : _on_area_body_entered( door.name, body ) )
 
+	# Resolve scene-local nodes safely (scene-agnostic)
+	navigator = get_node_or_null(navigator_path)
+	if navigator == null:
+		navigator = get_node_or_null("NavigationAgent3D")
+	jump_anim = get_node_or_null(jump_anim_path)
+	idle_anim = get_node_or_null(idle_anim_path)
+	run_anim = get_node_or_null(run_anim_path)
+
 	play_idle()
 	print("markers_node:", markers_node)
 	print("regions_node:", regions_node)
@@ -90,14 +104,14 @@ func _physics_process(delta: float) -> void:
 		
 	#var target_direction: Vector3 = (navigator.get_next_path_position() - global_transform.origin).normalized()
 	
-	if navigator.is_target_reached() or navigator.is_navigation_finished():
+	if navigator and (navigator.is_target_reached() or navigator.is_navigation_finished()):
 		play_idle()
 		velocity.x = 0
 		velocity.z = 0
 		if not end_communication:
 			signal_end_movement()
 			
-	elif not navigator.is_navigation_finished():
+	elif navigator and not navigator.is_navigation_finished():
 		play_run()
 		var direction = ( navigator.get_next_path_position() - global_position ).normalized()
 		var avoidance_force = get_avoidance_force()
@@ -113,7 +127,10 @@ func _on_area_body_entered( region_name, body ):
 		print( "Agent ", self.name, " entered region ", region_name )
 		if ( region_name == target_movement ):
 			signal_end_movement()
-			navigator.set_target_position( global_position )
+			if navigator:
+				navigator.set_target_position( global_position )
+			else:
+				print("No navigator to set target for (area enter).")
 	
 func _exit_tree() -> void:
 	ws.close()
@@ -185,7 +202,10 @@ func walk( target, _id ):
 		print("Target region not found: ", target)
 		return
 
-	navigator.set_target_position( target_region.global_position )
+	if navigator:
+		navigator.set_target_position( target_region.global_position )
+	else:
+		print("walk(): navigator is null, cannot set target.")
 	target_movement = target
 	play_run()
 	end_communication = false
@@ -255,9 +275,11 @@ func update_region( new_region : String ) -> void:
 func play_idle() -> void:
 	if run_anim and run_anim.is_playing():
 		run_anim.stop()
-	idle_anim.play( "Root|Idle" )
+	if idle_anim:
+		idle_anim.play( "Root|Idle" )
 
 func play_run() -> void:
-	if idle_anim.is_playing():
+	if idle_anim and idle_anim.is_playing():
 		idle_anim.stop()
-	run_anim.play( "Root|Run" )
+	if run_anim:
+		run_anim.play( "Root|Run" )
