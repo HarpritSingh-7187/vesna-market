@@ -1,5 +1,30 @@
 extends CharacterBody3D
 
+# --- BEGIN: configurazione scene-agnostic
+@export var nav_region_path: NodePath = NodePath("/root/Root/NavigationRegion3D")
+@export var markers_path: NodePath = NodePath("/root/Root/NavigationRegion3D/Markers")
+@export var regions_path: NodePath = NodePath("/root/Root/NavigationRegion3D/Regions")
+@export var doors_path: NodePath = NodePath("/root/Root/NavigationRegion3D/Doors")
+
+@export var navigator_path: NodePath = NodePath("NavigationAgent3D")
+@export var jump_anim_path: NodePath = NodePath("Body/Jump")
+@export var idle_anim_path: NodePath = NodePath("Body/Idle")
+@export var run_anim_path: NodePath = NodePath("Body/Run")
+
+@export var desired_separation: float = 3.0  # distanza minima desiderata
+@export var separation_weight: float = 5.0   # peso della forza di separazione
+
+@onready var nav_region_node := get_node_or_null(nav_region_path)
+@onready var markers_node := get_node_or_null(markers_path)
+@onready var regions_node := get_node_or_null(regions_path)
+@onready var doors_node := get_node_or_null(doors_path)
+
+var navigator: NavigationAgent3D = null
+var jump_anim = null
+var idle_anim = null
+var run_anim = null
+# --- END
+
 const SPEED = 10.0
 const ACCELERATION = 8.0
 const JUMP_VELOCITY = 4.5
@@ -15,25 +40,49 @@ var end_communication = true
 
 var target_movement : String = "empty"
 
-@onready var navigator : NavigationAgent3D = $NavigationAgent3D
-@onready var jump_anim = $Body/Jump
-@onready var idle_anim = $Body/Idle
-@onready var run_anim = $Body/Run
-
-@export var desired_separation: float = 3.0  # distanza minima desiderata
-@export var separation_weight: float = 5.0   # peso della forza di separazione
 
 func _ready() -> void:
-	if tcp_server.listen( PORT ) != OK:
-		push_error( "Unable to start the srver" )
-		set_process( false )
-	for region in get_node( "/root/Root/NavigationRegion3D/Regions").get_children():
-		region.connect( "body_entered", func( body) : _on_area_body_entered( region.name, body ) )
-	for door in get_node("/root/Root/NavigationRegion3D/Doors").get_children():
-		door.get_node("Area3D").connect( "body_entered", func( body) : _on_area_body_entered( door.name, body ) )
+	# if tcp_server.listen( PORT ) != OK:
+		# push_error( "Unable to start the srver" )
+		# set_process( false )
+	if regions_node:
+		for region in regions_node.get_children():
+			region.connect( "body_entered", func( body) : _on_area_body_entered( region.name, body ) )
+	else:
+		# fallback: try absolute path
+		var regions_fallback = get_node_or_null("/root/Root/NavigationRegion3D/Regions")
+		if regions_fallback:
+			for region in regions_fallback.get_children():
+				region.connect( "body_entered", func( body) : _on_area_body_entered( region.name, body ) )
+
+	if doors_node:
+		for door in doors_node.get_children():
+			var area = door.get_node_or_null("Area3D")
+			if area:
+				area.connect( "body_entered", func( body) : _on_area_body_entered( door.name, body ) )
+	else:
+		# fallback: try absolute path for Doors
+		var doors_fallback = get_node_or_null("/root/Root/NavigationRegion3D/Doors")
+		if doors_fallback:
+			for door in doors_fallback.get_children():
+				var area = door.get_node_or_null("Area3D")
+				if area:
+					area.connect( "body_entered", func( body) : _on_area_body_entered( door.name, body ) )
+
+	# Resolve scene-local nodes safely (scene-agnostic)
+	navigator = get_node_or_null(navigator_path)
+	if navigator == null:
+		navigator = get_node_or_null("NavigationAgent3D")
+	jump_anim = get_node_or_null(jump_anim_path)
+	idle_anim = get_node_or_null(idle_anim_path)
+	run_anim = get_node_or_null(run_anim_path)
+
 	play_idle()
+	print("markers_node:", markers_node)
+	print("regions_node:", regions_node)
+	print("doors_node:", doors_node)
 	
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	while tcp_server.is_connection_available():
 		var conn : StreamPeerTCP = tcp_server.take_connection()
 		assert( conn != null )
@@ -55,14 +104,14 @@ func _physics_process(delta: float) -> void:
 		
 	#var target_direction: Vector3 = (navigator.get_next_path_position() - global_transform.origin).normalized()
 	
-	if navigator.is_target_reached() or navigator.is_navigation_finished():
+	if navigator and (navigator.is_target_reached() or navigator.is_navigation_finished()):
 		play_idle()
 		velocity.x = 0
 		velocity.z = 0
 		if not end_communication:
 			signal_end_movement()
 			
-	elif not navigator.is_navigation_finished():
+	elif navigator and not navigator.is_navigation_finished():
 		play_run()
 		var direction = ( navigator.get_next_path_position() - global_position ).normalized()
 		var avoidance_force = get_avoidance_force()
@@ -78,7 +127,10 @@ func _on_area_body_entered( region_name, body ):
 		print( "Agent ", self.name, " entered region ", region_name )
 		if ( region_name == target_movement ):
 			signal_end_movement()
-			navigator.set_target_position( global_position )
+			if navigator:
+				navigator.set_target_position( global_position )
+			else:
+				print("No navigator to set target for (area enter).")
 	
 func _exit_tree() -> void:
 	ws.close()
@@ -98,8 +150,8 @@ func get_avoidance_force() -> Vector3:
 	return force * separation_weight
 
 func manage( intention : Dictionary ) -> void:
-	var sender : String = intention[ 'sender' ]
-	var receiver : String = intention[ 'receiver' ]
+	var _sender : String = intention[ 'sender' ]
+	var _receiver : String = intention[ 'receiver' ]
 	var type : String = intention[ 'type' ]
 	var data : Dictionary = intention[ 'data' ]
 	if type == 'walk':
@@ -124,13 +176,36 @@ func manage( intention : Dictionary ) -> void:
 			var art_name : String = data[ 'art_name' ]
 			release( art_name )
 
-func walk( target, id ):
-	var target_region = get_node_or_null("/root/Root/NavigationRegion3D/Markers/" + target )
+func walk( target, _id ):
+	var target_region = null
+	# try markers
+	if markers_node != null:
+		target_region = markers_node.get_node_or_null(target)
+	else:
+		target_region = get_node_or_null(str(markers_path) + "/" + target)
+
+	# try regions
 	if target_region == null:
-		target_region = get_node_or_null("/root/Root/NavigationRegion3D/Regions/" + target )
+		if regions_node != null:
+			target_region = regions_node.get_node_or_null(target)
+		else:
+			target_region = get_node_or_null(str(regions_path) + "/" + target)
+
+	# try doors
 	if target_region == null:
-		target_region = get_node_or_null("/root/Root/NavigationRegion3D/Doors/" + target )
-	navigator.set_target_position( target_region.global_position )
+		if doors_node != null:
+			target_region = doors_node.get_node_or_null(target)
+		else:
+			target_region = get_node_or_null(str(doors_path) + "/" + target)
+
+	if target_region == null:
+		print("Target region not found: ", target)
+		return
+
+	if navigator:
+		navigator.set_target_position( target_region.global_position )
+	else:
+		print("walk(): navigator is null, cannot set target.")
 	target_movement = target
 	play_run()
 	end_communication = false
@@ -180,18 +255,28 @@ func release( art_name : String ):
 	
 func signal_end_movement( ) -> void:
 	target_movement = "empty"
-	var log : Dictionary = {}
-	log[ 'sender' ] = 'body'
-	log[ 'receiver' ] = 'vesna'
-	log[ 'type' ] = 'signal'
+	var payload : Dictionary = {}
+	payload[ 'sender' ] = 'body'
+	payload[ 'receiver' ] = 'vesna'
+	payload[ 'type' ] = 'signal'
 	var msg : Dictionary = {}
 	msg[ 'type' ] = 'movement'
 	msg[ 'status' ] = 'completed'
 	msg[ 'reason' ] = 'destination_reached'
-	log[ 'data' ] = msg
-	ws.send_text( JSON.stringify( log ) )
-	end_communication = true
+	payload[ 'data' ] = msg
 
+	# Only send if websocket is open
+	if ws != null and ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text( JSON.stringify( payload ) )
+	else:
+		# Helpful debug log if connection is not open
+		var state_desc = "null"
+		if ws != null:
+			state_desc = str(ws.get_ready_state())
+			print("signal_end_movement: websocket not open, skipping send; state=", state_desc)
+
+	end_communication = true
+	
 func update_region( new_region : String ) -> void:
 	current_region = new_region
 	if current_region not in regions_dict:
@@ -200,9 +285,11 @@ func update_region( new_region : String ) -> void:
 func play_idle() -> void:
 	if run_anim and run_anim.is_playing():
 		run_anim.stop()
-	idle_anim.play( "Root|Idle" )
+	if idle_anim:
+		idle_anim.play( "Root|Idle" )
 
 func play_run() -> void:
-	if idle_anim.is_playing():
+	if idle_anim and idle_anim.is_playing():
 		idle_anim.stop()
-	run_anim.play( "Root|Run" )
+	if run_anim:
+		run_anim.play( "Root|Run" )

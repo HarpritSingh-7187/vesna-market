@@ -264,9 +264,19 @@ func signal_end_movement( ) -> void:
 	msg[ 'status' ] = 'completed'
 	msg[ 'reason' ] = 'destination_reached'
 	payload[ 'data' ] = msg
-	ws.send_text( JSON.stringify( payload ) )
-	end_communication = true
 
+	# Only send if websocket is open
+	if ws != null and ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text( JSON.stringify( payload ) )
+	else:
+		# Helpful debug log if connection is not open
+		var state_desc = "null"
+		if ws != null:
+			state_desc = str(ws.get_ready_state())
+			print("signal_end_movement: websocket not open, skipping send; state=", state_desc)
+
+	end_communication = true
+	
 func update_region( new_region : String ) -> void:
 	current_region = new_region
 	if current_region not in regions_dict:
