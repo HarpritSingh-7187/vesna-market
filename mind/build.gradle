@@ -28,14 +28,14 @@ task run (type: JavaExec, dependsOn: 'classes') {
     description 'runs the application'
     group ' JaCaMo'
     main = 'jacamo.infra.JaCaMoLauncher'
-    args 'vesna.jcm'
+    args 'market.jcm'
     classpath sourceSets.main.runtimeClasspath
 }
 
 sourceSets {
     main {
         java {
-            srcDir 'src/'
+            srcDirs = ['src/agt', 'src/env', 'src']
         }
     }
 }
