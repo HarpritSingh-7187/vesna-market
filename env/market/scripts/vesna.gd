@@ -14,6 +14,19 @@ extends CharacterBody3D
 @export var desired_separation: float = 3.0  # distanza minima desiderata
 @export var separation_weight: float = 5.0   # peso della forza di separazione
 
+# --- Vision Cone Configuration ---
+@export_group("Vision System")
+@export var vision_enabled: bool = true
+@export var vision_cone_angle: float = 120.0  # gradi
+@export var vision_range: float = 5.0  # metri
+@export var vision_update_interval: float = 1.0  # secondi
+@export var vision_debug_draw: bool = false  # visualizzazione cono
+
+var seen_objects: Dictionary = {}  # {object_name: true}
+var vision_timer: float = 0.0
+var vision_cone_mesh: MeshInstance3D = null  # per debug
+# ---------------------------------
+
 var nav_region_node = null
 var markers_node = null
 var regions_node = null
@@ -86,7 +99,13 @@ func _ready() -> void:
 	play_idle()
 	print("markers_node:", markers_node)
 	print("regions_node:", regions_node)
+	print("regions_node:", regions_node)
 	print("doors_node:", doors_node)
+	
+	# --- Vision Debug Setup ---
+	if vision_debug_draw:
+		_setup_vision_debug_mesh()
+	# --------------------------
 	
 func _process(_delta: float) -> void:
 	while tcp_server.is_connection_available():
@@ -104,6 +123,16 @@ func _process(_delta: float) -> void:
 			manage( intention )
 
 func _physics_process(delta: float) -> void:
+	# --- Vision Update ---
+	if vision_enabled:
+		vision_timer += delta
+		if vision_timer >= vision_update_interval:
+			# Only update if moving or forced (optional optimization)
+			if velocity.length() > 0.1 or vision_timer > vision_update_interval * 2:
+				update_vision()
+				vision_timer = 0.0
+	# ---------------------
+
 	# Add the gravity.
 	if not is_on_floor():
 		velocity += get_gravity() * delta
@@ -299,3 +328,117 @@ func play_run() -> void:
 		idle_anim.stop()
 	if run_anim:
 		run_anim.play( "Root|Run" )
+
+# --- Vision System Implementation ---
+
+func update_vision() -> void:
+	var visible_objects = []
+	var candidates = get_tree().get_nodes_in_group("GrabbableArtifact")
+	
+	for obj in candidates:
+		if is_in_vision_cone(obj.global_position):
+			# Check if already seen to set is_new flag
+			var is_new = not seen_objects.has(obj.name)
+			
+			# Collect data
+			var obj_data = {
+				"name": obj.name,
+				"coords": [obj.global_position.x, obj.global_position.y, obj.global_position.z],
+				"is_new": is_new
+			}
+			
+			# Add 'reparto' by traversing up the hierarchy to find the department
+			# Skip nodes that look like shelves, coolers, displays, etc.
+			var detected_reparto = "unknown"
+			var current_node = obj.get_parent()
+			var skip_keywords = ["Shelf", "shelf", "Cooler", "cooler", "Display", "display", "Rack", "rack", "Basket", "basket", "Cart", "cart"]
+			
+			while current_node:
+				var name_check = current_node.name
+				var is_container = false
+				for keyword in skip_keywords:
+					if keyword in name_check:
+						is_container = true
+						break
+				
+				if is_container:
+					current_node = current_node.get_parent()
+				else:
+					detected_reparto = current_node.name
+					break
+			
+			obj_data["reparto"] = detected_reparto
+				
+			visible_objects.append(obj_data)
+			
+			# Mark as seen
+			if is_new:
+				seen_objects[obj.name] = true
+				
+	if visible_objects.size() > 0:
+		send_vision_perception(visible_objects)
+
+func is_in_vision_cone(target_pos: Vector3) -> bool:
+	# 1. Distance Check
+	var distance = global_position.distance_to(target_pos)
+	if distance > vision_range:
+		return false
+		
+	# 2. Angle Check
+	var direction_to_target = (target_pos - global_position).normalized()
+	# Assuming agent faces -Z (Godot standard) or +Z based on model. 
+	# Using basis.z if model faces Z, or -basis.z if model faces -Z.
+	# Usually CharacterBody3D moves forward, so we can use velocity direction if moving,
+	# or current rotation. Let's use the rotation basis.
+	# NOTE: Adjust vector based on your specific model orientation!
+	# Assuming agent faces +X (based on rotation logic).
+	var forward_vector = global_transform.basis.x
+	
+	var angle_rad = forward_vector.angle_to(direction_to_target)
+	var angle_deg = rad_to_deg(angle_rad)
+	
+	return angle_deg <= (vision_cone_angle / 2.0)
+
+func send_vision_perception(objects: Array) -> void:
+	var payload : Dictionary = {}
+	payload['sender'] = 'body'
+	payload['receiver'] = 'vesna'
+	payload['type'] = 'perception'
+	
+	var data : Dictionary = {}
+	data['perception_type'] = 'vision'
+	data['objects'] = objects
+	
+	payload['data'] = data
+	
+	if ws != null and ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify(payload))
+		print("Sent vision perception: ", objects.size(), " objects")
+
+func _setup_vision_debug_mesh():
+	# Create a cone mesh to visualize the vision area
+	var cone = CylinderMesh.new()
+	cone.top_radius = tan(deg_to_rad(vision_cone_angle / 2.0)) * vision_range
+	cone.bottom_radius = 0.0
+	cone.height = vision_range
+	
+	# Material
+	var mat = StandardMaterial3D.new()
+	mat.albedo_color = Color(0, 1, 0, 0.3) # Semi-transparent green
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	cone.material = mat
+	
+	vision_cone_mesh = MeshInstance3D.new()
+	vision_cone_mesh.mesh = cone
+	
+	# Position: The cone cylinder is centered at (0,0,0) with height Y.
+	# We need to rotate it to point forward (+X) and move it so the tip is at the player.
+	# Rotate Z -90 to point +X.
+	add_child(vision_cone_mesh)
+	
+	# Adjust transform to align with forward vector (+X)
+	vision_cone_mesh.position.x = vision_range / 2.0
+	vision_cone_mesh.rotation.z = deg_to_rad(-90)
+# ------------------------------------
