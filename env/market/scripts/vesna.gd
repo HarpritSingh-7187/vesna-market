@@ -21,6 +21,8 @@ extends CharacterBody3D
 @export var vision_range: float = 5.0  # metri
 @export var vision_update_interval: float = 1.0  # secondi
 @export var vision_debug_draw: bool = false  # visualizzazione cono
+@export var manual_movement_enabled: bool = false # Abilita movimento manuale (WASD/Frecce)
+
 
 var seen_objects: Dictionary = {}  # {object_name: true}
 var vision_timer: float = 0.0
@@ -139,7 +141,21 @@ func _physics_process(delta: float) -> void:
 		
 	#var target_direction: Vector3 = (navigator.get_next_path_position() - global_transform.origin).normalized()
 	
-	if navigator and (navigator.is_target_reached() or navigator.is_navigation_finished()):
+	if manual_movement_enabled:
+		var input_dir = Input.get_vector("ui_left", "ui_right", "ui_down", "ui_up")
+		var direction = Vector3(input_dir.y, 0, input_dir.x).normalized()
+		
+		if direction:
+			velocity.x = direction.x * SPEED
+			velocity.z = direction.z * SPEED
+			rotation.y = atan2(-velocity.z, velocity.x)
+			play_run()
+		else:
+			velocity.x = move_toward(velocity.x, 0, SPEED)
+			velocity.z = move_toward(velocity.z, 0, SPEED)
+			play_idle()
+			
+	elif navigator and (navigator.is_target_reached() or navigator.is_navigation_finished()):
 		play_idle()
 		velocity.x = 0
 		velocity.z = 0
@@ -397,7 +413,34 @@ func is_in_vision_cone(target_pos: Vector3) -> bool:
 	var angle_rad = forward_vector.angle_to(direction_to_target)
 	var angle_deg = rad_to_deg(angle_rad)
 	
-	return angle_deg <= (vision_cone_angle / 2.0)
+	return angle_deg <= (vision_cone_angle / 2.0) and has_line_of_sight(target_pos)
+
+func has_line_of_sight(target_pos: Vector3) -> bool:
+	# Raycast check at 0.5m height to account for 1m walls
+	var space_state = get_world_3d().direct_space_state
+	var ray_origin = global_position + Vector3(0, 0.5, 0)
+	var ray_target = target_pos + Vector3(0, 0.5, 0)
+	
+	var query = PhysicsRayQueryParameters3D.create(ray_origin, ray_target)
+	query.exclude = [self]
+	
+	var result = space_state.intersect_ray(query)
+	
+	if result:
+		# Should only see if we hit the target itself or something very close to it.
+		# However, since we are doing generic "is this visible", if we hit *anything* 
+		# that isn't the target (or maybe its children), it's occluded.
+		# Since target_pos is just a Vector3, we can't easily check 'collider == target_pos'.
+		# But 'candidates' loop passes 'obj'. We can refactor is_in_vision_cone to take 'obj' instead of just pos.
+		# For now, let's assume if it hits anything closer than target_dist - margin, it's a wall.
+		var hit_dist = ray_origin.distance_to(result.position)
+		var target_dist = ray_origin.distance_to(ray_target)
+		
+		# If we hit something significantly closer than the target, it's an obstruction.
+		if hit_dist < target_dist - 0.2: # 20cm tolerance
+			return false
+			
+	return true
 
 func send_vision_perception(objects: Array) -> void:
 	var payload : Dictionary = {}
