@@ -28,28 +28,27 @@ public class VesnaAgent extends Agent {
     private WsClient client;
     private String my_name;
 
-    // Override loadInitialAS method to connect to the WebSocket server (body)
+    // Inizializzazione
     @Override
     public void loadInitialAS(String asSrc) throws Exception {
 
         super.loadInitialAS(asSrc);
         my_name = getTS().getAgArch().getAgName();
 
-        // Get the address from beliefs
+        // Lettura indirizzo e porta dai beliefs
         Unifier address_unifier = new Unifier();
         believes(parseLiteral("address( Address )"), address_unifier);
 
-        // Get the port from beliefs
         Unifier port_unifier = new Unifier();
         believes(parseLiteral("port( Port )"), port_unifier);
 
-        // Check if the address and port beliefs are defined
+        // Controllo se indirizzo e porte sono definiti
         if (address_unifier.get("Address") == null || port_unifier.get("Port") == null) {
             stop("address and port beliefs are not defined!");
             return;
         }
 
-        // Store address and port in variables and initialize the WebSocket client
+        // Finalizzati i controlli, salvo indirizzo e porta in variabili
         String address = address_unifier.get("Address").toString();
         int port = (int) ((NumberTerm) port_unifier.get("Port")).solve();
 
@@ -58,7 +57,7 @@ public class VesnaAgent extends Agent {
         URI body_address = new URI("ws://" + address + ":" + port);
         client = new WsClient(body_address);
 
-        // Connect the two handle functions to the client object
+        // Imposto il handler per i messaggi e gli errori
         client.setMsgHandler(new WsClientMsgHandler() {
             @Override
             public void handle_msg(String msg) {
@@ -70,16 +69,16 @@ public class VesnaAgent extends Agent {
                 vesna_handle_error(ex);
             }
         });
-        // Connect the body
+        // Connessione body
         client.connect();
     }
 
-    // perform sends an action to the body
+    // Invio action al body
     public void perform(String action) {
         client.send(action);
     }
 
-    // sense signals the mind about a perception
+    // funzione per segnalare al mind eventuali percezioni
     private void sense(Literal perception) {
         try {
             Message signal = new Message("signal", my_name, my_name, perception);
@@ -89,7 +88,7 @@ public class VesnaAgent extends Agent {
         }
     }
 
-    // handle_event takes all the data from an event and senses a perception
+    // prende tutti i dati da un evento e segnala una percezione
     private void handle_event(JSONObject event) {
         String event_type = event.getString("type");
         String event_status = event.getString("status");
@@ -98,7 +97,7 @@ public class VesnaAgent extends Agent {
         sense(perception);
     }
 
-    // handle_sight takes all the data from a sight and adds a belief
+    // prende i dati dal sight e li segnalo al mind (obsoleto)
     private void handle_sight(JSONObject sight) {
         String object = sight.getString("sight");
         long id = sight.getLong("id");
@@ -110,7 +109,7 @@ public class VesnaAgent extends Agent {
         }
     }
 
-    // handle_perception takes vision data and senses a perception signal
+    // prende i dati da vision e li segnala al mind
     private void handle_perception(JSONObject data) {
         String type = data.getString("perception_type");
         if (type.equals("vision")) {
@@ -143,8 +142,8 @@ public class VesnaAgent extends Agent {
         }
     }
 
-    // this function handles incoming messages from the body
-    // available types are: signal, sight, perception
+    // Questa funzione gestisce i messaggi che arrivano dal body
+    // tipi: signal, sight, perception
     public void vesna_handle_msg(String msg) {
         System.out.println("Received message: " + msg);
         JSONObject log = new JSONObject(msg);
@@ -167,22 +166,20 @@ public class VesnaAgent extends Agent {
         }
     }
 
-    // Stops the agent: prints a message and kills the agent
+    // fermo l'agente e kill
     private void stop(String reason) {
         System.out.println("[" + my_name + " ERROR] " + reason);
         kill_agent();
     }
 
-    // Handles a connection error: prints a message and kills the agent
+    // Gestisce errore connessione: stampa errore e kill agente
     public void vesna_handle_error(Exception ex) {
         System.out.println("[" + my_name + " ERROR] " + ex.getMessage());
         kill_agent();
     }
 
-    // Kills the agent calling the internal actions to drop all desires, intentions
-    // and events and then kill the agent;
-    // This is necessary to avoid the agent to keep running after the kill_agent
-    // call ( that otherwise is simply enqueued ).
+    // L'agente viene killato chiamando InternalAction droppando tutte le
+    // intenzioni, desideri ed eventi.
     private void kill_agent() {
         System.out.println("[" + my_name + " ERROR] Killing agent");
         try {

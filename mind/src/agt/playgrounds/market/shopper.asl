@@ -1,6 +1,6 @@
 // Agent shopper in project mind
 
-/* Initial Beliefs and Goals */
+/* Belief e goals iniziali  */
 // Define the market regions (Omniscience)
 region("Entrata").
 region("Ortofrutta").
@@ -31,64 +31,58 @@ region("Uscita").
 
 +!start : started <- .print("Shopper agent already started.").
 
-// Exploration loop: find an unvisited and reachable region and go there
+// Ricerca una regione non visitata e raggiungibile e va lì
 +!explore : region(R) & not visited(R) & not unreachable(R) <-
     .print("Next stop: ", R);
     !visit(R);
     !explore.
 
+// altrimenti torno in Entrata
 +!explore : not (region(R) & not visited(R) & not unreachable(R)) <-
     .print("I have visited (or skipped) all regions! Exploration complete.");
     .print("Returning to Entrata...");
     !visit("Entrata");
     .print("I am back at the Entrata. Mission accomplished.").
 
-// Plan to visit a specific region
+// Pianifica una regione da visitare
 +!visit(R) : true <-
     +target_region(R);
     .print("Walking to ", R, "...");
     vesna.walk(R);
-    // Wait for the movement completion signal (max 20 seconds)
+    // Aspetta al massimo 20 secondi per la ricezione del segnale di movimento completato
     .wait({+movement(completed, destination_reached)}, 20000);
-    // The signal handler will add visited(R) and remove target_region(R)
+    // Regione visitata e rimuove target a movimento completato
     +visited(R);
     -target_region(R);
     -movement(completed, destination_reached);
     .print("Arrived at ", R).
 
-// Failure handling for visit (e.g. timeout)
+// Non riceve alcun segnale di visita 
+
+// Timeout
 -!visit(R) : true <-
     .print("Failed to reach ", R, " (timeout). Skipping.");
     -target_region(R);
     +unreachable(R).
 
+// Altri motivi
 +movement(failed, Reason) : target_region(R) <-
     .print("Movement to ", R, " failed: ", Reason);
     -target_region(R);
     -movement(failed, Reason).
 
-// --- Vision Perception Handling ---
 
-// Handle vision perception from Godot
+// Gestione perception da Godot
 +perception(vision, Objects) : true <-
     //.print("Vision update received: ", Objects);
     !process_vision_objects(Objects);
-    -perception(vision, Objects). // Clear signal
+    -perception(vision, Objects). // Elimina la percezione ricevuta
 
 +!process_vision_objects([]) : true.
 
 +!process_vision_objects([Obj|Rest]) : true <-
-    // Assuming Obj structure is a map/list from JSON: [Name, Reparto, Coords, IsNew]
-    // Note: The exact structure depends on how VesnaAgent.java parses the JSON object.
-    // If it comes as a map, we might need specific accessors.
-    // For now, let's assume VesnaAgent converts JSON objects to a list of terms or a map.
-    // IF VesnaAgent isn't updated, we might receive raw data.
     
-    // Let's assume we get a list of maps or similar structure.
-    // Since we haven't updated VesnaAgent.java yet, we might need to do that first
-    // to ensure clean AgentSpeak terms.
-    
-    // Placeholder logic:
+    // Logica Placeholder
     // .print("Processing object: ", Obj);
     !process_vision_objects(Rest).
 
