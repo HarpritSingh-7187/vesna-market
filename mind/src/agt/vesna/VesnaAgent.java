@@ -139,7 +139,35 @@ public class VesnaAgent extends Agent {
 
             Literal perception = createLiteral("perception", createLiteral(type), list);
             sense(perception);
+        } else if (type.equals("object_state")) {
+            handle_object_state(data);
         }
+    }
+
+    // Elabora eventi object_state (seen/grabbable/lost)
+    private void handle_object_state(JSONObject data) {
+        String event = data.getString("event");
+        JSONObject obj = data.getJSONObject("object");
+
+        String name = obj.getString("name");
+        String reparto = obj.getString("reparto");
+        boolean grabbable = obj.getBoolean("grabbable");
+
+        JSONArray coords = obj.getJSONArray("coords");
+        ListTerm coordsList = new ListTermImpl();
+        coordsList.add(createNumber(coords.getDouble(0)));
+        coordsList.add(createNumber(coords.getDouble(1)));
+        coordsList.add(createNumber(coords.getDouble(2)));
+
+        // perception(object_state, event, name, reparto, coords, grabbable)
+        Literal perception = createLiteral("perception",
+                createLiteral("object_state"),
+                createLiteral(event),
+                createString(name),
+                createString(reparto),
+                coordsList,
+                createLiteral(Boolean.toString(grabbable)));
+        sense(perception);
     }
 
     // Questa funzione gestisce i messaggi che arrivano dal body

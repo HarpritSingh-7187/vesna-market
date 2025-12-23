@@ -72,17 +72,25 @@ region("Uscita").
     -movement(failed, Reason).
 
 
-// Gestione perception da Godot
+// Gestione perception da Godot (object_state)
++perception(object_state, "seen", Name, Reparto, Coords, Grabbable) : true <-
+    //.print("Visto: ", Name, " in ", Reparto);
+    +object(Name, Reparto, Coords, Grabbable);
+    -perception(object_state, "seen", Name, Reparto, Coords, Grabbable).
+
++perception(object_state, "grabbable", Name, Reparto, Coords, Grabbable) : true <-
+    .print("Grabbable change: ", Name, " -> ", Grabbable);
+    -object(Name, _, _, _);
+    +object(Name, Reparto, Coords, Grabbable);
+    -perception(object_state, "grabbable", Name, Reparto, Coords, Grabbable).
+
++perception(object_state, "lost", Name, _, _, _) : true <-
+    .print("Perso vista di: ", Name);
+    -object(Name, _, _, _);
+    -perception(object_state, "lost", Name, _, _, _).
+
+// Vecchio handler deprecato
 +perception(vision, Objects) : true <-
-    //.print("Vision update received: ", Objects);
-    !process_vision_objects(Objects);
-    -perception(vision, Objects). // Elimina la percezione ricevuta
-
-+!process_vision_objects([]) : true.
-
-+!process_vision_objects([Obj|Rest]) : true <-
-    
-    // Logica Placeholder
-    // .print("Processing object: ", Obj);
-    !process_vision_objects(Rest).
+    .print("Warning: Received deprecated vision list perception.");
+    -perception(vision, Objects).
 

@@ -24,9 +24,10 @@ extends CharacterBody3D
 @export var vision_update_interval: float = 1.0  # secondi
 @export var vision_debug_draw: bool = false  # visualizzazione cono
 @export var manual_movement_enabled: bool = false # Abilita movimento manuale (WASD/Frecce)
+@export var GRAB_RANGE: float = 2.0 # Distanza per afferrare oggetti
 
-var seen_objects: Dictionary = {}  # {object_name: true}
-var vision_timer: float = 0.0
+var seen_objects: Dictionary = {}  # {object_name: {reparto, coords, visible, grabbable}}
+var field_of_view: Area3D = null
 var vision_cone_mesh: MeshInstance3D = null  # per debug
 
 # Variabili Cache
@@ -57,6 +58,7 @@ var end_communication = true
 
 
 func _ready() -> void:
+	manual_movement_enabled = true # Enable for manual testing
 
 	# Avvio server di comunicazione
 	if tcp_server.listen( PORT ) != OK:
@@ -111,6 +113,8 @@ func _ready() -> void:
 	print("Idle Anim:", idle_anim)
 	print("Run Anim:", run_anim)
 	print("doors_node:", doors_node)	
+
+	_setup_field_of_view()
 	if vision_debug_draw:
 		_setup_vision_debug_mesh()
 	
@@ -133,14 +137,9 @@ func _process(_delta: float) -> void:
 			manage( intention )
 
 func _physics_process(delta: float) -> void:
-	# Aggiorna il sistema di visione
+	# Aggiorna il sistema di visione (CHECK periodico solo per grabbability su oggetti visibili)
 	if vision_enabled:
-		vision_timer += delta
-		if vision_timer >= vision_update_interval:
-			# Aggiorno solo se in movimento o se è passato abbastanza tempo
-			if velocity.length() > 0.1 or vision_timer > vision_update_interval * 2:
-				update_vision()
-				vision_timer = 0.0
+		_check_grabbability_change()
 
 	# Aggiunge la gravità
 	if not is_on_floor():
@@ -315,6 +314,7 @@ func grab( art_name: String ):
 func free_art( art_name : String ):
 	print( "I free " + art_name )
 	
+	
 func release( art_name : String ):
 	# Ricerca punto di rilascio più vicino
 	var release_points = get_tree().get_nodes_in_group( "ReleasePoint" )
@@ -376,54 +376,126 @@ func play_run() -> void:
 	if run_anim:
 		run_anim.play( "Root|Run" )
 
-# --- Vision System Implementation ---
 
-func update_vision() -> void:
-	# Raccolta oggetti 
-	var visible_objects = []
-	var candidates = get_tree().get_nodes_in_group("GrabbableArtifact")
+
+func _setup_field_of_view() -> void:
+	field_of_view = Area3D.new()
+	field_of_view.name = "FieldOfView"
+	add_child(field_of_view)
 	
-	for obj in candidates:
-		if is_in_vision_cone(obj.global_position):
-			# Controllo se oggetto è stato già visto
-			var is_new = not seen_objects.has(obj.name)
-			
-			
-			var obj_data = {
-				"name": obj.name,
-				"coords": [obj.global_position.x, obj.global_position.y, obj.global_position.z],
-				"is_new": is_new
-			}
-			
-			# Deduzione reparto e filtro per contenitori generici
-			var detected_reparto = "unknown"
-			var current_node = obj.get_parent()
-			var skip_keywords = ["Shelf", "shelf", "Cooler", "cooler", "Display", "display", "Rack", "rack", "Basket", "basket", "Cart", "cart"]
-			
-			while current_node:
-				var name_check = current_node.name
-				var is_container = false
-				for keyword in skip_keywords:
-					if keyword in name_check:
-						is_container = true
-						break
-				
-				if is_container:
-					current_node = current_node.get_parent()
-				else:
-					detected_reparto = current_node.name
-					break
-			
-			obj_data["reparto"] = detected_reparto
-				
-			visible_objects.append(obj_data)
-			
-			# Mark as seen
-			if is_new:
-				seen_objects[obj.name] = true
-	# invio dati al mind 
-	if visible_objects.size() > 0:
-		send_vision_perception(visible_objects)
+	# Configurazione cono Field of View
+	var cone_mesh = CylinderMesh.new()
+	cone_mesh.top_radius = tan(deg_to_rad(vision_cone_angle / 2.0)) * vision_range
+	cone_mesh.bottom_radius = 0.0
+	cone_mesh.height = vision_range
+	
+	var shape = cone_mesh.create_convex_shape()
+	var collision_shape = CollisionShape3D.new()
+	collision_shape.shape = shape
+	field_of_view.add_child(collision_shape)
+	
+	# Posizionamento cono in avanti (+X)
+	collision_shape.position.x = vision_range / 2.0
+	collision_shape.rotation.z = deg_to_rad(-90)
+	
+	field_of_view.body_entered.connect(_on_field_of_view_body_entered)
+	field_of_view.body_exited.connect(_on_field_of_view_body_exited)
+	
+func _on_field_of_view_body_entered(body: Node3D) -> void:
+	# Converti StaticBody3D in MeshInstance3D
+	var artifact = body.get_parent()
+	if artifact == null or not artifact.is_in_group("GrabbableArtifact"):
+		return
+		
+	if not has_line_of_sight(artifact.global_position):
+		return
+		
+	var artifact_name = artifact.name
+	var is_new = not seen_objects.has(artifact_name)
+	var obj_data = seen_objects.get(artifact_name, {})
+	
+	# Aggiorna stato oggetto
+	obj_data["visible"] = true
+	if not obj_data.has("reparto"):
+		obj_data["reparto"] = deduce_reparto(artifact)
+	obj_data["coords"] = [artifact.global_position.x, artifact.global_position.y, artifact.global_position.z]
+	
+	var is_grabbable = is_within_grab_range(artifact)
+	obj_data["grabbable"] = is_grabbable
+	
+	seen_objects[artifact_name] = obj_data
+
+	send_object_state("seen", artifact_name, obj_data, is_new)
+	if is_grabbable:
+		send_object_state("grabbable", artifact_name, obj_data, false)
+
+func _on_field_of_view_body_exited(body: Node3D) -> void:
+	var artifact = body.get_parent()
+	if artifact == null: return
+	
+	var artifact_name = artifact.name
+	if seen_objects.has(artifact_name) and seen_objects[artifact_name]["visible"]:
+		seen_objects[artifact_name]["visible"] = false
+		seen_objects[artifact_name]["grabbable"] = false
+		send_object_state("lost", artifact_name, seen_objects[artifact_name], false)
+
+func _check_grabbability_change() -> void:
+	# Controlla grabbability solo per oggetti visibili
+	for obj_name in seen_objects:
+		var data = seen_objects[obj_name]
+		if data["visible"]:
+			var obj = get_obj_from_group(obj_name, "GrabbableArtifact")
+			if obj:
+				var is_now_grabbable = is_within_grab_range(obj)
+				if data["grabbable"] != is_now_grabbable:
+					data["grabbable"] = is_now_grabbable
+					send_object_state("grabbable" if is_now_grabbable else "not_grabbable", obj_name, data, false)
+
+func deduce_reparto(obj: Node3D) -> String:
+	var detected_reparto = "unknown"
+	var current_node = obj.get_parent()
+	var skip_keywords = ["Shelf", "shelf", "Cooler", "cooler", "Display", "display", "Rack", "rack", "Basket", "basket", "Cart", "cart"]
+	
+	while current_node:
+		var name_check = current_node.name
+		var is_container = false
+		for keyword in skip_keywords:
+			if keyword in name_check:
+				is_container = true
+				break
+		
+		if is_container:
+			current_node = current_node.get_parent()
+		else:
+			detected_reparto = current_node.name
+			break
+	return detected_reparto
+
+func is_within_grab_range(obj: Node3D) -> bool:
+	var hand_pos = global_position + Vector3(0, 1.5, 0)
+	var dist = hand_pos.distance_to(obj.global_position)
+	return dist <= GRAB_RANGE
+
+func send_object_state(status: String, name: String, data: Dictionary, is_new: bool) -> void:
+	var payload : Dictionary = {}
+	payload['sender'] = 'body'
+	payload['receiver'] = 'vesna'
+	payload['type'] = 'perception'
+	
+	var msg_data : Dictionary = {}
+	msg_data['perception_type'] = 'object_state'
+	msg_data['event'] = status
+	msg_data['object'] = {
+		"name": name,
+		"reparto": data["reparto"],
+		"coords": data.get("coords", [0,0,0]),
+		"grabbable": data.get("grabbable", false),
+		"is_new": is_new
+	}
+	payload['data'] = msg_data
+	
+	if ws != null and ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		ws.send_text(JSON.stringify(payload))
 
 func is_in_vision_cone(target_pos: Vector3) -> bool:
 	# 1. Controllo distanza
@@ -463,24 +535,8 @@ func has_line_of_sight(target_pos: Vector3) -> bool:
 	return true
 
 func send_vision_perception(objects: Array) -> void:
-
-	#Creazione payload
-	var payload : Dictionary = {}
-	payload['sender'] = 'body'
-	payload['receiver'] = 'vesna'
-	payload['type'] = 'perception'
-	
-	# Inserimento dati
-	var data : Dictionary = {}
-	data['perception_type'] = 'vision'
-	data['objects'] = objects
-	
-	payload['data'] = data
-	
-	# Invio dati
-	if ws != null and ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		ws.send_text(JSON.stringify(payload))
-		print("Sent vision perception: ", objects.size(), " objects")
+	# Deprecato da send_object_state, tengo per compatibilità se necessario
+	pass
 
 func _setup_vision_debug_mesh():
 	# Creazione mesh per debug visuale
@@ -505,4 +561,3 @@ func _setup_vision_debug_mesh():
 	
 	vision_cone_mesh.position.x = vision_range / 2.0
 	vision_cone_mesh.rotation.z = deg_to_rad(-90)
-
