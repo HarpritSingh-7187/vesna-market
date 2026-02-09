@@ -27,8 +27,10 @@ godot_name(fish, "Fish").
 godot_name(butcher, "Butcher").
 godot_name(checkout, "Checkout").
 godot_name(exit, "Exit").
+godot_name(fence_door_rotate_1, "FenceDoorRotate1").
+godot_name(fence_door_rotate_2, "FenceDoorRotate2").
 
-{ include("market_map.asl") }
+{ include("playgrounds/market/market_map.asl") }
 
 !start.
 
@@ -62,8 +64,8 @@ godot_name(exit, "Exit").
     +target_region(R);
     .print("Walking to ", R, " (Node: ", GName, ")...");
     vesna.walk(GName);
-    // Wait max 20 seconds for movement completion signal
-    .wait({+movement(completed, destination_reached)}, 20000);
+    // Wait max 120 seconds for movement completion signal
+    .wait({+movement(completed, destination_reached)}, 120000);
     // Mark as visited and cleanup
     +visited(R);
     -target_region(R);

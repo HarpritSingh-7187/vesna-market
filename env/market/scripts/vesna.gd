@@ -56,6 +56,12 @@ var current_region = ""
 var target_movement : String = "empty"
 var end_communication = true
 
+# Waypoint tracking for verification
+var total_waypoints_for_target: int = 0
+var visited_waypoints_count: int = 0
+var navigation_active: bool = false  # Flag to track if we're actively navigating
+var waypoint_queue: Array = [] # Queue for hierarchical waypoints
+
 
 func _ready() -> void:
 	manual_movement_enabled = false
@@ -159,12 +165,26 @@ func _physics_process(delta: float) -> void:
 			play_idle()
 	# Movimento automatico per la navigazione
 	# Se la navigazione è finita o il target è raggiunto:
-	elif navigator and (navigator.is_target_reached() or navigator.is_navigation_finished()):
-		play_idle()
-		velocity.x = 0
-		velocity.z = 0
-		if not end_communication:
-			signal_end_movement()
+	elif navigator and navigation_active and (navigator.is_target_reached() or navigator.is_navigation_finished()):
+		
+		# Se ho ancora waypoint nella coda, passo al prossimo
+		if not waypoint_queue.is_empty():
+			visited_waypoints_count += 1
+			var next_wp = waypoint_queue.pop_front()
+			print("Waypoint ", visited_waypoints_count, "/", total_waypoints_for_target, " reached. Moving to next...")
+			navigator.set_target_position( next_wp.global_position )
+			play_run() # Continuo a correre
+			
+		# Se la coda è vuota, ho finito 
+		else:
+			visited_waypoints_count += 1  # Count the final waypoint
+			print("All waypoints completed: ", visited_waypoints_count, "/", total_waypoints_for_target)
+			navigation_active = false  # Stop navigation
+			play_idle()
+			velocity.x = 0
+			velocity.z = 0
+			if not end_communication:
+				signal_end_movement()
 			
 	# Se la navigazione non è finita:
 	elif navigator and not navigator.is_navigation_finished():
@@ -185,14 +205,19 @@ func _on_area_body_entered( region_name, body ):
 		print( "Agent ", self.name, " entered region ", region_name )
 		# verifico se zona corrisponde ad obiettivo
 		if ( region_name == target_movement ):
-			# invio segnale di fine movimento
 			print( "Agent ", self.name, " reached target ", target_movement )
-			signal_end_movement()
-			# fermo la navigazione 
-			if navigator:
-				navigator.set_target_position( global_position )
+			# SOLO se non ci sono più waypoints da visitare, invio il segnale
+			# Altrimenti lasciamo che _physics_process completi tutti i waypoints
+			if waypoint_queue.is_empty():
+				navigation_active = false  # Stop navigation
+				signal_end_movement()
+				# fermo la navigazione 
+				if navigator:
+					navigator.set_target_position( global_position )
+				else:
+					print("No navigator to set target for (area enter).")
 			else:
-				print("No navigator to set target for (area enter).")
+				print("Still ", waypoint_queue.size(), " waypoints remaining, continuing navigation...")
 	
 # chiusura connessione
 func _exit_tree() -> void:
@@ -242,6 +267,13 @@ func manage( intention : Dictionary ) -> void:
 			var art_name : String = data[ 'art_name' ]
 			release( art_name )
 
+func _collect_waypoints_recursive(node: Node, queue: Array) -> void:
+	for child in node.get_children():
+		if child is Marker3D:
+			queue.append(child)
+		_collect_waypoints_recursive(child, queue)
+
+
 func walk( target, _id ):
 	var target_region = null
 	# Ricerca destinazione
@@ -272,12 +304,30 @@ func walk( target, _id ):
 
 	# Avvio navigazione
 	if navigator:
-		navigator.set_target_position( target_region.global_position )
+		# Pulisco la coda precedente
+		waypoint_queue.clear()
+		
+		# Colleziono eventuali waypoint figli (es. Butcher -> Line1 -> WP1...)
+		_collect_waypoints_recursive(target_region, waypoint_queue)
+		
+		if not waypoint_queue.is_empty():
+			total_waypoints_for_target = waypoint_queue.size()
+			visited_waypoints_count = 0
+			print("Found ", total_waypoints_for_target, " sub-waypoints for ", target)
+			# Se ci sono waypoint, il primo diventa il target immediato
+			var next_wp = waypoint_queue.pop_front()
+			navigator.set_target_position( next_wp.global_position )
+		else:
+			# Comportamento classico: vado al centro della regione
+			total_waypoints_for_target = 1  # Just the region center
+			visited_waypoints_count = 0
+			navigator.set_target_position( target_region.global_position )
 	else:
 		print("walk(): navigator is null, cannot set target.")
 
 	# Aggiornamento stato
 	target_movement = target
+	navigation_active = true  # Enable navigation processing
 	play_run()
 	end_communication = false
 
@@ -344,6 +394,10 @@ func signal_end_movement( ) -> void:
 	msg[ 'type' ] = 'movement'
 	msg[ 'status' ] = 'completed'
 	msg[ 'reason' ] = 'destination_reached'
+	# Waypoint verification data
+	msg[ 'total_waypoints' ] = total_waypoints_for_target
+	msg[ 'visited_waypoints' ] = visited_waypoints_count
+	msg[ 'all_waypoints_visited' ] = (visited_waypoints_count >= total_waypoints_for_target) if total_waypoints_for_target > 0 else true
 	payload[ 'data' ] = msg
 
 	# Only send if websocket is open
