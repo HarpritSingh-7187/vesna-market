@@ -23,7 +23,7 @@ extends CharacterBody3D
 @export var vision_range: float = 5.0  # metri
 @export var vision_update_interval: float = 1.0  # secondi
 @export var vision_debug_draw: bool = false  # visualizzazione cono
-@export var manual_movement_enabled: bool = false # Abilita movimento manuale (WASD/Frecce)
+@export var manual_movement_enabled: bool = true # Abilita movimento manuale (WASD/Frecce)
 @export var GRAB_RANGE: float = 2.0 # Distanza per afferrare oggetti
 
 var seen_objects: Dictionary = {}  # {object_name: {reparto, coords, visible, grabbable}}
@@ -58,8 +58,7 @@ var end_communication = true
 
 
 func _ready() -> void:
-	manual_movement_enabled = true # Enable for manual testing
-
+	manual_movement_enabled = false
 	# Avvio server di comunicazione
 	if tcp_server.listen( PORT ) != OK:
 		push_error( "Unable to start the server" )
@@ -106,13 +105,13 @@ func _ready() -> void:
 
 	# avvio stato iniziale + debug
 	play_idle()
-	print("markers_node:", markers_node)
-	print("regions_node:", regions_node)
-	print("Navigator:", navigator)
-	print("Jump Anim:", jump_anim)
-	print("Idle Anim:", idle_anim)
-	print("Run Anim:", run_anim)
-	print("doors_node:", doors_node)	
+	#print("markers_node:", markers_node)
+	#print("regions_node:", regions_node)
+	#print("Navigator:", navigator)
+	#print("Jump Anim:", jump_anim)
+	#print("Idle Anim:", idle_anim)
+	#print("Run Anim:", run_anim)
+	#print("doors_node:", doors_node)	
 
 	_setup_field_of_view()
 	if vision_debug_draw:
@@ -402,7 +401,7 @@ func _setup_field_of_view() -> void:
 	field_of_view.body_exited.connect(_on_field_of_view_body_exited)
 	
 func _on_field_of_view_body_entered(body: Node3D) -> void:
-	# Converti StaticBody3D in MeshInstance3D
+	# Cerco oggetto genitore da collisione
 	var artifact = body.get_parent()
 	if artifact == null or not artifact.is_in_group("GrabbableArtifact"):
 		return
@@ -496,22 +495,7 @@ func send_object_state(status: String, name: String, data: Dictionary, is_new: b
 	
 	if ws != null and ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		ws.send_text(JSON.stringify(payload))
-
-func is_in_vision_cone(target_pos: Vector3) -> bool:
-	# 1. Controllo distanza
-	var distance = global_position.distance_to(target_pos)
-	if distance > vision_range:
-		return false
 		
-	# 2. Calcolo direzione ed orientamento
-	var direction_to_target = (target_pos - global_position).normalized()
-	var forward_vector = global_transform.basis.x
-	
-	var angle_rad = forward_vector.angle_to(direction_to_target)
-	var angle_deg = rad_to_deg(angle_rad)
-	
-	return angle_deg <= (vision_cone_angle / 2.0) and has_line_of_sight(target_pos)
-
 func has_line_of_sight(target_pos: Vector3) -> bool:
 	# Preparazione raycast per controllo visibilità
 	var space_state = get_world_3d().direct_space_state
@@ -534,9 +518,6 @@ func has_line_of_sight(target_pos: Vector3) -> bool:
 		
 	return true
 
-func send_vision_perception(objects: Array) -> void:
-	# Deprecato da send_object_state, tengo per compatibilità se necessario
-	pass
 
 func _setup_vision_debug_mesh():
 	# Creazione mesh per debug visuale

@@ -109,38 +109,13 @@ public class VesnaAgent extends Agent {
         }
     }
 
-    // prende i dati da vision e li segnala al mind
+    // prende i dati da vision (obsoleto) e li segnala al mind
     private void handle_perception(JSONObject data) {
         String type = data.getString("perception_type");
-        if (type.equals("vision")) {
-            JSONArray objects = data.getJSONArray("objects");
-            ListTerm list = new ListTermImpl();
-
-            for (int i = 0; i < objects.length(); i++) {
-                JSONObject obj = objects.getJSONObject(i);
-                String name = obj.getString("name");
-                String reparto = obj.getString("reparto");
-                boolean isNew = obj.getBoolean("is_new");
-                JSONArray coords = obj.getJSONArray("coords");
-
-                ListTerm coordsList = new ListTermImpl();
-                coordsList.add(createNumber(coords.getDouble(0)));
-                coordsList.add(createNumber(coords.getDouble(1)));
-                coordsList.add(createNumber(coords.getDouble(2)));
-
-                ListTerm objTerm = new ListTermImpl();
-                objTerm.add(createString(name));
-                objTerm.add(createString(reparto));
-                objTerm.add(coordsList);
-                objTerm.add(createLiteral(Boolean.toString(isNew)));
-
-                list.add(objTerm);
-            }
-
-            Literal perception = createLiteral("perception", createLiteral(type), list);
-            sense(perception);
-        } else if (type.equals("object_state")) {
+        if (type.equals("object_state")) {
             handle_object_state(data);
+        } else {
+            System.out.println("Unknown perception type: " + type);
         }
     }
 
