@@ -507,7 +507,7 @@ func _check_grabbability_change() -> void:
 func deduce_reparto(obj: Node3D) -> String:
 	var detected_reparto = "unknown"
 	var current_node = obj.get_parent()
-	var skip_keywords = ["Shelf", "shelf", "Cooler", "cooler", "Display", "display", "Rack", "rack", "Basket", "basket", "Cart", "cart"]
+	var skip_keywords = ["Shelf", "shelf", "Cooler", "cooler", "Display", "display", "Rack", "rack", "Basket", "basket", "Cart", "cart", "StaticBody3D"]
 	
 	while current_node:
 		var name_check = current_node.name
