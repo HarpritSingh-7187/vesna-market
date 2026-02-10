@@ -541,7 +541,6 @@ func send_object_state(status: String, name: String, data: Dictionary, is_new: b
 	msg_data['object'] = {
 		"name": name,
 		"reparto": data["reparto"],
-		"coords": data.get("coords", [0,0,0]),
 		"grabbable": data.get("grabbable", false),
 		"is_new": is_new
 	}

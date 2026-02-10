@@ -11,7 +11,6 @@ import java.net.URI;
 
 import org.gradle.internal.impldep.org.apache.commons.lang.StringUtils;
 import org.json.JSONObject;
-import org.json.JSONArray;
 
 // VesnaAgent class extends the Agent class making the agent embodied;
 // It connects to the body using a WebSocket connection;
@@ -128,27 +127,21 @@ public class VesnaAgent extends Agent {
         String reparto = obj.getString("reparto");
         boolean grabbable = obj.getBoolean("grabbable");
 
-        JSONArray coords = obj.getJSONArray("coords");
-        ListTerm coordsList = new ListTermImpl();
-        coordsList.add(createNumber(coords.getDouble(0)));
-        coordsList.add(createNumber(coords.getDouble(1)));
-        coordsList.add(createNumber(coords.getDouble(2)));
-
-        // perception(object_state, event, name, reparto, coords, grabbable)
+        // perception(object_state, event, name, reparto, grabbable)
         Literal perception = createLiteral("perception",
                 createLiteral("object_state"),
-                createLiteral(event),
+                createString(event),
                 createString(name),
                 createString(reparto),
-                coordsList,
                 createLiteral(Boolean.toString(grabbable)));
+        // System.out.println("[DEBUG] Sensing: " + perception.toString());
         sense(perception);
     }
 
     // Questa funzione gestisce i messaggi che arrivano dal body
     // tipi: signal, sight, perception
     public void vesna_handle_msg(String msg) {
-        System.out.println("Received message: " + msg);
+        // System.out.println("Received message: " + msg);
         JSONObject log = new JSONObject(msg);
         String sender = log.getString("sender");
         String receiver = log.getString("receiver");
@@ -184,7 +177,7 @@ public class VesnaAgent extends Agent {
     // L'agente viene killato chiamando InternalAction droppando tutte le
     // intenzioni, desideri ed eventi.
     private void kill_agent() {
-        System.out.println("[" + my_name + " ERROR] Killing agent");
+        // System.out.println("[" + my_name + " ERROR] Killing agent");
         try {
             InternalAction drop_all_desires = getIA(".drop_all_desires");
             InternalAction drop_all_intentions = getIA(".drop_all_intentions");

@@ -91,33 +91,42 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
 
 // Perception Handling (object_state)
 // Map incoming String (RegionString) back to Atom (RegionAtom) using godot_name
-+perception(object_state, "seen", Name, RegionString, Coords, Grabbable) : godot_name(RegionAtom, RegionString) <-
++perception(object_state, "seen", Name, RegionString, Grabbable) : godot_name(RegionAtom, RegionString) <-
     //.print("Seen: ", Name, " in ", RegionString);
-    +object(Name, RegionAtom, Coords, Grabbable);
-    -perception(object_state, "seen", Name, RegionString, Coords, Grabbable).
+    -object(Name, _, _);
+    +object(Name, RegionAtom, Grabbable);
+    -perception(object_state, "seen", Name, RegionString, Grabbable).
 
 // Fallback: If no atom found, store the string directly (robustness)
-+perception(object_state, "seen", Name, RegionString, Coords, Grabbable) : not godot_name(RegionAtom, RegionString) <-
-    .print("Warning: Seen object ", Name, " in unknown region '", RegionString, "'.");
-    +object(Name, RegionString, Coords, Grabbable);
-    -perception(object_state, "seen", Name, RegionString, Coords, Grabbable).
++perception(object_state, "seen", Name, RegionString, Grabbable) : not godot_name(RegionAtom, RegionString) <-
+    //.print("Warning: Seen object ", Name, " in unknown region '", RegionString, "'.");
+    -object(Name, _, _);
+    +object(Name, RegionString, Grabbable);
+    -perception(object_state, "seen", Name, RegionString, Grabbable).
 
-+perception(object_state, "grabbable", Name, RegionString, Coords, Grabbable) : godot_name(RegionAtom, RegionString) <-
-    .print("Grabbable change: ", Name, " -> ", Grabbable);
-    -object(Name, _, _, _);
-    +object(Name, RegionAtom, Coords, Grabbable);
-    -perception(object_state, "grabbable", Name, RegionString, Coords, Grabbable).
++perception(object_state, "grabbable", Name, RegionString, Grabbable) : godot_name(RegionAtom, RegionString) <-
+    //.print("Grabbable change: ", Name, " -> ", Grabbable);
+    -object(Name, _, _);
+    +object(Name, RegionAtom, Grabbable);
+    -perception(object_state, "grabbable", Name, RegionString, Grabbable).
 
-+perception(object_state, "grabbable", Name, RegionString, Coords, Grabbable) : not godot_name(RegionAtom, RegionString) <-
-    .print("Grabbable change (unknown region): ", Name, " -> ", Grabbable);
-    -object(Name, _, _, _);
-    +object(Name, RegionString, Coords, Grabbable);
-    -perception(object_state, "grabbable", Name, RegionString, Coords, Grabbable).
++perception(object_state, "grabbable", Name, RegionString, Grabbable) : not godot_name(RegionAtom, RegionString) <-
+    //.print("Grabbable change (unknown region): ", Name, " -> ", Grabbable);
+    -object(Name, _, _);
+    +object(Name, RegionString, Grabbable);
+    -perception(object_state, "grabbable", Name, RegionString, Grabbable).
 
-+perception(object_state, "lost", Name, _, _, _) : true <-
-    .print("Lost sight of: ", Name);
-    -object(Name, _, _, _);
-    -perception(object_state, "lost", Name, _, _, _).
+// Persistent memory: on lost, keep the belief with grabbable=false
++perception(object_state, "lost", Name, _, _) : object(Name, Region, _) <-
+    .print("Lost sight of: ", Name, " (remembered in ", Region, ")");
+    -object(Name, _, _);
+    +object(Name, Region, false);
+    -perception(object_state, "lost", Name, _, _).
+
+// Fallback lost: if no existing belief found
++perception(object_state, "lost", Name, _, _) : not object(Name, _, _) <-
+    .print("Lost sight of unknown object: ", Name);
+    -perception(object_state, "lost", Name, _, _).
 
 // Deprecated handler
 +perception(vision, Objects) : true <-
