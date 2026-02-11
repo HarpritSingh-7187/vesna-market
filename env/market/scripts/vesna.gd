@@ -297,6 +297,10 @@ func walk( target, _id ):
 		else:
 			target_region = get_node_or_null(str(doors_path) + "/" + target)
 
+	# Prova con gli oggetti GrabbableArtifact (per approach)
+	if target_region == null:
+		target_region = get_obj_from_group(target, "GrabbableArtifact")
+
 	# Controllo validità destinazione
 	if target_region == null:
 		print("Target region not found: ", target)

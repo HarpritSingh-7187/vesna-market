@@ -54,10 +54,13 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
 
 // If all regions visited or unreachable, return to Entry
 +!explore : not (region(R) & not visited(R) & not unreachable(R)) <-
-    .print("I have visited (or skipped) all regions! Exploration complete.");
-    .print("Returning to Entry...");
+    .print("Exploration complete.");
+    .findall(obj(N,R,G), object(N,R,G), MemoryList);
+    .print("Remembered objects: ", MemoryList);
+    .print("Returning to Entry before fetch...");
     !visit(entry);
-    .print("I am back at the Entry. Mission accomplished.").
+    .print("Starting fetch for Watermelon...");
+    !fetch("Watermelon").
 
 // Plan to visit a region
 +!visit(R) : godot_name(R, GName) <-
@@ -87,6 +90,62 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
     .print("Movement to ", R, " failed: ", Reason);
     -target_region(R);
     -movement(failed, Reason).
+
+
+
+// Fetch: find an object whose name contains SearchName (handles Watermelon1, Watermelon2, etc.)
++!fetch(SearchName) : object(Name, Region, _) & .substring(SearchName, Name) & godot_name(Region, _) <-
+    .print("Looking for ", SearchName, " - found ", Name, " in ", Region);
+    .print("Walking directly to ", Name, "...");
+    vesna.walk(Name);
+    .wait({+movement(completed, destination_reached)}, 120000);
+    -movement(completed, destination_reached);
+    .print("Reached ", Name, ". Grabbing...");
+    vesna.grab(Name);
+    .print("Successfully grabbed ", Name, "!");
+    .print("Returning to Entry...");
+    !visit(entry);
+    .print("Back at Entry. Fetch complete.").
+
+// Fetch fallback: no matching object in memory
++!fetch(SearchName) : not (object(Name, _, _) & .substring(SearchName, Name)) <-
+    .print("Error: no matching object for ", SearchName, ". Explore first.").
+
+// Fetch failure handler (timeout, navigation error, etc.)
+-!fetch(SearchName) : true <-
+    .print("Failed to fetch ", SearchName, " (timeout or error).").
+
+// Helper: wait for object to become grabbable
+// Case 1: already grabbable
++!wait_grabbable(Name, Region) : object(Name, Region, true) <-
+    .print(Name, " is already within grab range.").
+
+// Case 2: not yet grabbable -> approach the object, then re-check
++!wait_grabbable(Name, Region) : object(Name, Region, false) <-
+    .print(Name, " not in grab range. Approaching...");
+    vesna.walk(Name);
+    .wait({+movement(completed, destination_reached)}, 60000);
+    -movement(completed, destination_reached);
+    .print("Approached ", Name, ".");
+    !check_grabbable(Name, Region).
+
+// After approach: already grabbable (event fired during walk)
++!check_grabbable(Name, Region) : object(Name, Region, true) <-
+    .print(Name, " is now within grab range.").
+
+// After approach: not yet grabbable -> wait for perception
++!check_grabbable(Name, Region) : object(Name, Region, false) <-
+    .print("Waiting for ", Name, " to become grabbable...");
+    .wait({+object(Name, Region, true)}, 15000).
+
+// Case 3: failure (timeout)
+-!wait_grabbable(Name, Region) : true <-
+    .print("Timeout waiting for ", Name, " to become grabbable.");
+    .fail.
+
+-!check_grabbable(Name, Region) : true <-
+    .print("Timeout on check_grabbable for ", Name, ".");
+    .fail.
 
 
 // Perception Handling (object_state)
