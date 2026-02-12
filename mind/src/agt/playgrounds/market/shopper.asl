@@ -59,8 +59,17 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
     .print("Remembered objects: ", MemoryList);
     .print("Returning to Entry before fetch...");
     !visit(entry);
-    .print("Starting fetch for Watermelon...");
-    !fetch("Watermelon").
+    .print("Starting order processing...");
+    !process_order(["Watermelon", "Cheese3", "Pizza"]).
+
+// Process a list of orders recursively
++!process_order([]) <-
+    .print("All orders processed! Mission complete.").
+
++!process_order([Item|Rest]) <-
+    .print("Processing order for: ", Item);
+    !fetch(Item);
+    !process_order(Rest).
 
 // Plan to visit a region
 +!visit(R) : godot_name(R, GName) <-
