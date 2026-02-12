@@ -488,7 +488,8 @@ func _on_field_of_view_body_entered(body: Node3D) -> void:
 
 func _on_field_of_view_body_exited(body: Node3D) -> void:
 	var artifact = body.get_parent()
-	if artifact == null: return
+	if artifact == null or not artifact.is_in_group("GrabbableArtifact"):
+		return
 	
 	var artifact_name = artifact.name
 	if seen_objects.has(artifact_name) and seen_objects[artifact_name]["visible"]:

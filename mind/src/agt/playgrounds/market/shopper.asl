@@ -7,9 +7,9 @@ region(entry).
 region(fv).
 region(drinks).
 region(bakery).
-region(bread).
+region(breads).
 region(dairy).
-region(sauce).
+region(sauces).
 region(fish).
 region(butcher).
 region(checkout).
@@ -20,9 +20,9 @@ godot_name(entry, "Entry").
 godot_name(fv, "FV").
 godot_name(drinks, "Drinks").
 godot_name(bakery, "Bakery").
-godot_name(bread, "Bread").
+godot_name(breads, "Breads").
 godot_name(dairy, "Dairy").
-godot_name(sauce, "Sauce").
+godot_name(sauces, "Sauces").
 godot_name(fish, "Fish").
 godot_name(butcher, "Butcher").
 godot_name(checkout, "Checkout").
@@ -174,6 +174,18 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
     -object(Name, _, _);
     +object(Name, RegionString, Grabbable);
     -perception(object_state, "grabbable", Name, RegionString, Grabbable).
+
+// Handle "not_grabbable" event (object left grab range)
++perception(object_state, "not_grabbable", Name, RegionString, _) : godot_name(RegionAtom, RegionString) <-
+    -object(Name, _, _);
+    +object(Name, RegionAtom, false);
+    -perception(object_state, "not_grabbable", Name, RegionString, _).
+
+//Fallback if no atom found 
++perception(object_state, "not_grabbable", Name, RegionString, _) : not godot_name(RegionAtom, RegionString) <-
+    -object(Name, _, _);
+    +object(Name, RegionString, false);
+    -perception(object_state, "not_grabbable", Name, RegionString, _).
 
 // Persistent memory: on lost, keep the belief with grabbable=false
 +perception(object_state, "lost", Name, _, _) : object(Name, Region, _) <-
