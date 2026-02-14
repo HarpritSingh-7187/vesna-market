@@ -38,38 +38,42 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
 
 +!start : not started <- 
     +started;
-    .print("Hello! I am ready to explore the market.");
+    .print("Hello! I am ready. Waiting for orders...").
+
++!explore <-
+    .print("Exploration command received!");
     .print("First, I will go to the Entry.");
     !visit(entry);
     .wait(1000);
-    !explore.
+    !auto_explore.
 
 +!start : started <- .print("Shopper agent already started.").
 
 // Find an unvisited, reachable region and go there
-+!explore : region(R) & not visited(R) & not unreachable(R) <-
++!auto_explore : region(R) & not visited(R) & not unreachable(R) <-
     .print("Next stop: ", R);
     !visit(R);
-    !explore.
+    !auto_explore.
 
 // If all regions visited or unreachable, return to Entry
-+!explore : not (region(R) & not visited(R) & not unreachable(R)) <-
++!auto_explore : not (region(R) & not visited(R) & not unreachable(R)) <-
     .print("Exploration complete.");
     .findall(obj(N,R,G), object(N,R,G), MemoryList);
     .print("Remembered objects: ", MemoryList);
     .print("Returning to Entry before fetch...");
     !visit(entry);
-    .print("Starting order processing...");
-    !process_order(["Watermelon", "Cheese3", "Pizza"]).
+    //.print("Starting order processing...");
+    //!process_order(["Watermelon", "Cheese3", "Pizza"]).
+    .print("Waiting for instructions from Orchestrator...").
 
 // Process a list of orders recursively
-+!process_order([]) <-
-    .print("All orders processed! Mission complete.").
+//+!process_order([]) <-
+    //.print("All orders processed! Mission complete.").
 
-+!process_order([Item|Rest]) <-
-    .print("Processing order for: ", Item);
-    !fetch(Item);
-    !process_order(Rest).
+//+!process_order([Item|Rest]) <-
+    //.print("Processing order for: ", Item);
+    //!fetch(Item);
+    //!process_order(Rest).
 
 // Plan to visit a region
 +!visit(R) : godot_name(R, GName) <-
@@ -163,6 +167,7 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
     //.print("Seen: ", Name, " in ", RegionString);
     -object(Name, _, _);
     +object(Name, RegionAtom, Grabbable);
+    .broadcast(tell, object(Name, RegionAtom, Grabbable)); // SHARE KNOWLEDGE
     -perception(object_state, "seen", Name, RegionString, Grabbable).
 
 // Fallback: If no atom found, store the string directly (robustness)
@@ -170,18 +175,21 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
     //.print("Warning: Seen object ", Name, " in unknown region '", RegionString, "'.");
     -object(Name, _, _);
     +object(Name, RegionString, Grabbable);
+    .broadcast(tell, object(Name, RegionString, Grabbable)); // SHARE KNOWLEDGE
     -perception(object_state, "seen", Name, RegionString, Grabbable).
 
 +perception(object_state, "grabbable", Name, RegionString, Grabbable) : godot_name(RegionAtom, RegionString) <-
     //.print("Grabbable change: ", Name, " -> ", Grabbable);
     -object(Name, _, _);
     +object(Name, RegionAtom, Grabbable);
+    .broadcast(tell, object(Name, RegionAtom, Grabbable)); // SHARE KNOWLEDGE
     -perception(object_state, "grabbable", Name, RegionString, Grabbable).
 
 +perception(object_state, "grabbable", Name, RegionString, Grabbable) : not godot_name(RegionAtom, RegionString) <-
     //.print("Grabbable change (unknown region): ", Name, " -> ", Grabbable);
     -object(Name, _, _);
     +object(Name, RegionString, Grabbable);
+    .broadcast(tell, object(Name, RegionString, Grabbable)); // SHARE KNOWLEDGE
     -perception(object_state, "grabbable", Name, RegionString, Grabbable).
 
 // Handle "not_grabbable" event (object left grab range)
@@ -212,3 +220,8 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
 +perception(vision, Objects) : true <-
     .print("Warning: Received deprecated vision list perception.");
     -perception(vision, Objects).
+
+// Feedback when receiving info from other agents
++object(Name, Region, Grabbable)[source(Sender)]
+    : Sender \== self & Sender \== percept
+   <- .print("Received info from ", Sender, ": ", Name, " is in ", Region).
