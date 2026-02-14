@@ -38,7 +38,10 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
 
 +!start : not started <- 
     +started;
-    .print("Hello! I am ready. Waiting for orders...").
+    .my_name(Me);
+    .print("Hello! I am ready. Registering with Orchestrator as ", Me, "...");
+    .send(orchestrator, tell, available(Me));
+    .print("Waiting for orders...").
 
 +!explore <-
     .print("Exploration command received!");
@@ -60,11 +63,10 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
     .print("Exploration complete.");
     .findall(obj(N,R,G), object(N,R,G), MemoryList);
     .print("Remembered objects: ", MemoryList);
-    .print("Returning to Entry before fetch...");
-    !visit(entry);
-    //.print("Starting order processing...");
-    //!process_order(["Watermelon", "Cheese3", "Pizza"]).
-    .print("Waiting for instructions from Orchestrator...").
+    .print("Returning to Base before fetch...");
+    !return_home;
+    .print("Exploration complete. Notifying Orchestrator...");
+    .send(orchestrator, tell, exploration_completed).
 
 // Process a list of orders recursively
 //+!process_order([]) <-
@@ -106,8 +108,39 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
 
 
 
-// Fetch: find an object whose name contains SearchName (handles Watermelon1, Watermelon2, etc.)
-+!fetch(SearchName) : object(Name, Region, _) & .substring(SearchName, Name) & godot_name(Region, _) <-
+// Mapping agents to their home markers
+agent_base(shopper1, "Shopper1").
+agent_base(shopper2, "Shopper2").
+
+// If all regions visited or unreachable, return to Home Base
++!auto_explore : not (region(R) & not visited(R) & not unreachable(R)) <-
+    .print("Exploration complete.");
+    .findall(obj(N,R,G), object(N,R,G), MemoryList);
+    .print("Remembered objects: ", MemoryList);
+    .print("Returning to Base before fetch...");
+    !return_home;
+    .print("Exploration complete. Notifying Orchestrator...");
+    .send(orchestrator, tell, exploration_completed).
+
+// Queue-based Fetch Logic
++!fetch(Item)[source(Sender)] <-
+    .print("Received order for ", Item, ". Adding to queue.");
+    +task_queue(Item);
+    !process_queue.
+
++!process_queue : busy <- true. // Already working, do nothing
++!process_queue : not busy & task_queue(Item) <-
+    +busy;
+    .print("Processing next task: ", Item);
+    !perform_fetch(Item);
+    -task_queue(Item);
+    -busy;
+    !process_queue. // Check for more
++!process_queue : not busy & not task_queue(_) <- 
+    .print("All tasks in queue completed.").
+
+// Sequential Fetch Logic
++!perform_fetch(SearchName) : object(Name, Region, _) & .substring(SearchName, Name) & godot_name(Region, _) <-
     .print("Looking for ", SearchName, " - found ", Name, " in ", Region);
     .print("Walking directly to ", Name, "...");
     vesna.walk(Name);
@@ -116,16 +149,29 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
     .print("Reached ", Name, ". Grabbing...");
     vesna.grab(Name);
     .print("Successfully grabbed ", Name, "!");
-    .print("Returning to Entry...");
-    !visit(entry);
-    .print("Back at Entry. Fetch complete.").
+    .print("Returning to Base...");
+    !return_home;
+    .print("Back at Base. Fetch complete.").
+
+// Shared plan to return to specific home
++!return_home : .my_name(Me) & agent_base(Me, BaseNode) <-
+   .print("Returning to my specific base: ", BaseNode);
+   vesna.walk(BaseNode);
+   .wait({+movement(completed, destination_reached)}, 120000);
+   -movement(completed, destination_reached);
+   .print("Arrived at base.").
+
+// Fallback if no base defined
++!return_home : true <-
+    .print("No specific base defined. Returning to Entry.");
+    !visit(entry).
 
 // Fetch fallback: no matching object in memory
-+!fetch(SearchName) : not (object(Name, _, _) & .substring(SearchName, Name)) <-
++!perform_fetch(SearchName) : not (object(Name, _, _) & .substring(SearchName, Name)) <-
     .print("Error: no matching object for ", SearchName, ". Explore first.").
 
 // Fetch failure handler (timeout, navigation error, etc.)
--!fetch(SearchName) : true <-
+-!perform_fetch(SearchName) : true <-
     .print("Failed to fetch ", SearchName, " (timeout or error).").
 
 // Helper: wait for object to become grabbable
@@ -162,64 +208,43 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
 
 
 // Perception Handling (object_state)
-// Map incoming String (RegionString) back to Atom (RegionAtom) using godot_name
-+perception(object_state, "seen", Name, RegionString, Grabbable) : godot_name(RegionAtom, RegionString) <-
-    //.print("Seen: ", Name, " in ", RegionString);
-    -object(Name, _, _);
-    +object(Name, RegionAtom, Grabbable);
-    .broadcast(tell, object(Name, RegionAtom, Grabbable)); // SHARE KNOWLEDGE
-    -perception(object_state, "seen", Name, RegionString, Grabbable).
+// Atom or String fallback
+resolve_region(String, Atom) :- godot_name(Atom, String).
+resolve_region(String, String) :- not godot_name(_, String). 
 
-// Fallback: If no atom found, store the string directly (robustness)
-+perception(object_state, "seen", Name, RegionString, Grabbable) : not godot_name(RegionAtom, RegionString) <-
-    //.print("Warning: Seen object ", Name, " in unknown region '", RegionString, "'.");
+// Handler for Positive Events (seen/grabbable) -> Update & Broadcast
++perception(object_state, Event, Name, RegStr, Grabbable) 
+    : (Event == "seen" | Event == "grabbable") & resolve_region(RegStr, Region) 
+   <- 
     -object(Name, _, _);
-    +object(Name, RegionString, Grabbable);
-    .broadcast(tell, object(Name, RegionString, Grabbable)); // SHARE KNOWLEDGE
-    -perception(object_state, "seen", Name, RegionString, Grabbable).
+    +object(Name, Region, Grabbable);
+    .broadcast(tell, object(Name, Region, Grabbable));
+    -perception(object_state, Event, Name, RegStr, Grabbable).
 
-+perception(object_state, "grabbable", Name, RegionString, Grabbable) : godot_name(RegionAtom, RegionString) <-
-    //.print("Grabbable change: ", Name, " -> ", Grabbable);
+// Unified Handler for Negative Events (not_grabbable/lost) -> Update
++perception(object_state, "not_grabbable", Name, RegStr, _) 
+    : resolve_region(RegStr, Region)
+   <- 
     -object(Name, _, _);
-    +object(Name, RegionAtom, Grabbable);
-    .broadcast(tell, object(Name, RegionAtom, Grabbable)); // SHARE KNOWLEDGE
-    -perception(object_state, "grabbable", Name, RegionString, Grabbable).
+    +object(Name, Region, false);
+    -perception(object_state, "not_grabbable", Name, RegStr, _).
 
-+perception(object_state, "grabbable", Name, RegionString, Grabbable) : not godot_name(RegionAtom, RegionString) <-
-    //.print("Grabbable change (unknown region): ", Name, " -> ", Grabbable);
-    -object(Name, _, _);
-    +object(Name, RegionString, Grabbable);
-    .broadcast(tell, object(Name, RegionString, Grabbable)); // SHARE KNOWLEDGE
-    -perception(object_state, "grabbable", Name, RegionString, Grabbable).
-
-// Handle "not_grabbable" event (object left grab range)
-+perception(object_state, "not_grabbable", Name, RegionString, _) : godot_name(RegionAtom, RegionString) <-
-    -object(Name, _, _);
-    +object(Name, RegionAtom, false);
-    -perception(object_state, "not_grabbable", Name, RegionString, _).
-
-//Fallback if no atom found 
-+perception(object_state, "not_grabbable", Name, RegionString, _) : not godot_name(RegionAtom, RegionString) <-
-    -object(Name, _, _);
-    +object(Name, RegionString, false);
-    -perception(object_state, "not_grabbable", Name, RegionString, _).
-
-// Persistent memory: on lost, keep the belief with grabbable=false
-+perception(object_state, "lost", Name, _, _) : object(Name, Region, _) <-
++perception(object_state, "lost", Name, _, _) 
+    : object(Name, Region, _) 
+   <- 
     .print("Lost sight of: ", Name, " (remembered in ", Region, ")");
     -object(Name, _, _);
     +object(Name, Region, false);
     -perception(object_state, "lost", Name, _, _).
 
-// Fallback lost: if no existing belief found
-+perception(object_state, "lost", Name, _, _) : not object(Name, _, _) <-
+// Fallback lost (unknown object)
++perception(object_state, "lost", Name, _, _) 
+   <- 
     .print("Lost sight of unknown object: ", Name);
     -perception(object_state, "lost", Name, _, _).
 
-// Deprecated handler
-+perception(vision, Objects) : true <-
-    .print("Warning: Received deprecated vision list perception.");
-    -perception(vision, Objects).
+// Deprecated
++perception(vision, Objects) : true <- -perception(vision, Objects).
 
 // Feedback when receiving info from other agents
 +object(Name, Region, Grabbable)[source(Sender)]
