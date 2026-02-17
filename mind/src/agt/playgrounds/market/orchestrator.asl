@@ -49,4 +49,9 @@ shopping_list(["Watermelon", "Cheese3","Ketchup", "Musterd", "Croissant", "MeatP
     .concat(OtherAgents, [Agent], NextAgents);
     
     !dispatch(Rest, NextAgents).
-    
+
+// React to task completion from shoppers
++tasks_completed(Agent)[source(Agent)] <-
+    .print("Agent ", Agent, " has completed all assigned tasks. Now idle.");
+    +idle(Agent).
+

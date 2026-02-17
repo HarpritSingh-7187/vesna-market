@@ -167,7 +167,9 @@ agent_base(shopper2, "Shopper2").
 +!process_queue : not busy & not task_queue(_) <- 
     .print("All tasks grabbed. Returning to base...");
     !return_home;
-    .print("All tasks completed.").
+    .print("All tasks completed.");
+    .my_name(Me);
+    .send(orchestrator, tell, tasks_completed(Me)).
 
 // Sequential Fetch Logic — navigate to the region first, then approach the object
 +!perform_fetch(SearchName) : object(Name, Region, _) & .substring(SearchName, Name) & godot_name(Region, _) <-
