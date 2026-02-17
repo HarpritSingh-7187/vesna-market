@@ -2,35 +2,21 @@
 
 /* Initial Beliefs and Goals */
 
-// Define the market regions (Atoms matching market_map.asl)
-region(entry).
-region(fv).
-region(drinks).
-region(bakery).
-region(breads).
-region(dairy).
-region(sauces).
-region(fish).
-region(butcher).
-region(checkout).
-region(exit).
-
-// Mapping logical atoms to Godot Scene Node names (Strings)
-godot_name(entry, "Entry").
-godot_name(fv, "FV").
-godot_name(drinks, "Drinks").
-godot_name(bakery, "Bakery").
-godot_name(breads, "Breads").
-godot_name(dairy, "Dairy").
-godot_name(sauces, "Sauces").
-godot_name(fish, "Fish").
-godot_name(butcher, "Butcher").
-godot_name(checkout, "Checkout").
-godot_name(exit, "Exit").
-godot_name(fence_door_rotate_1, "FenceDoorRotate1").
-godot_name(fence_door_rotate_2, "FenceDoorRotate2").
-
 { include("playgrounds/market/market_map.asl") }
+
+// Pathfinding via DFS on the map graph
+// Only follows ec edges (physical adjacency) between nodes that have a godot_name
+// (this excludes abstract sections AND line-level nodes from paths)
+find_market_path( Start, Target, Path ) :- find_market_path_r( Start, Target, [ Start ], Path ).
+find_market_path_r( Target, Target, Visited, Visited ).
+find_market_path_r( Current, Target, Visited, Path ) :-
+    ec( Current, Next )
+    & godot_name( Next, _ )
+    & not .member( Next, Visited )
+    & find_market_path_r( Next, Target, [ Next | Visited ], Path ).
+
+// Agent starts at entry
+current_location(entry).
 
 !start.
 
@@ -48,19 +34,33 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
     .print("First, I will go to the Entry.");
     !visit(entry);
     .wait(1000);
-    !auto_explore.
+    ?explore_order(Route);
+    !auto_explore(Route).
 
 +!start : started <- .print("Shopper agent already started.").
 
-// Find an unvisited, reachable region and go there
-+!auto_explore : region(R) & not visited(R) & not unreachable(R) <-
+// Follow topological route: visit each shoppable region in physical order
++!auto_explore([]) <-
+    .print("Topological exploration complete.");
+    !finish_explore.
+
+// Skip already-visited or unreachable regions
++!auto_explore([R|Rest]) : (visited(R) | unreachable(R)) <-
+    !auto_explore(Rest).
+
+// Visit next region in order
++!auto_explore([R|Rest]) : shoppable(R) & not visited(R) & not unreachable(R) <-
     .print("Next stop: ", R);
     !visit(R);
-    !auto_explore.
+    !auto_explore(Rest).
 
-// If all regions visited or unreachable, return to Entry
-+!auto_explore : not (region(R) & not visited(R) & not unreachable(R)) <-
-    .print("Exploration complete.");
+// (legacy) If regions not in ordered list
++!auto_explore([R|Rest]) : true <-
+    .print("Skipping ", R, " (not shoppable)");
+    !auto_explore(Rest).
+
+// Finish exploration: report and return
++!finish_explore <-
     .findall(obj(N,R,G), object(N,R,G), MemoryList);
     .print("Remembered objects: ", MemoryList);
     .print("Returning to Base before fetch...");
@@ -68,26 +68,64 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
     .print("Exploration complete. Notifying Orchestrator...");
     .send(orchestrator, tell, exploration_completed).
 
-// Process a list of orders recursively
-//+!process_order([]) <-
-    //.print("All orders processed! Mission complete.").
+// =============================================
+// NAVIGAZIONE CON PATHFINDING VIA MARKET MAP
+// =============================================
 
-//+!process_order([Item|Rest]) <-
-    //.print("Processing order for: ", Item);
-    //!fetch(Item);
-    //!process_order(Rest).
+// navigate_to(Dest): trova il percorso da current_location a Dest e lo segue tappa per tappa
++!navigate_to(Dest) : current_location(Dest) <-
+    .print("Already at ", Dest, ", no movement needed.").
 
-// Plan to visit a region
++!navigate_to(Dest) : current_location(Here) & godot_name(Dest, _) <-
+    .print("Planning path from ", Here, " to ", Dest, "...");
+    ?find_market_path(Here, Dest, RPath);
+    .delete(Here, RPath, LPath);
+    .reverse(LPath, Path);
+    .print("Path found: ", Path);
+    !follow_market_path(Path).
+
+// Fallback: no path found
++!navigate_to(Dest) : current_location(Here) & not (find_market_path(Here, Dest, _)) <-
+    .print("ERROR: No path from ", Here, " to ", Dest, ". Trying direct walk...");
+    godot_name(Dest, GName);
+    vesna.walk(GName, "quick");
+    .wait({+movement(completed, destination_reached)}, 120000);
+    -movement(completed, destination_reached);
+    -current_location(_);
+    +current_location(Dest).
+
+// follow_market_path: cammina tappa per tappa in modalità "quick" (transito rapido)
++!follow_market_path([]) <-
+    .print("Path navigation complete.").
+
++!follow_market_path([Next|Rest]) : godot_name(Next, GName) <-
+    .print("Step -> ", Next, " (Node: ", GName, ")");
+    vesna.walk(GName, "quick");
+    .wait({+movement(completed, destination_reached)}, 120000);
+    -movement(completed, destination_reached);
+    -current_location(_);
+    +current_location(Next);
+    !follow_market_path(Rest).
+
+// Failure on a single step
+-!follow_market_path([Next|_]) : true <-
+    .print("Failed to reach ", Next, " (timeout on path step). Aborting path.");
+    .fail.
+
+// =============================================
+// VISIT: usa navigate_to
+// =============================================
 +!visit(R) : godot_name(R, GName) <-
     +target_region(R);
-    .print("Walking to ", R, " (Node: ", GName, ")...");
+    .print("Visiting ", R, " via map navigation...");
+    !navigate_to(R);
+    // Esplorazione completa: cammina per TUTTI i waypoint della regione
+    .print("Exploring all waypoints in ", R, "...");
     vesna.walk(GName);
-    // Wait max 120 seconds for movement completion signal
     .wait({+movement(completed, destination_reached)}, 120000);
-    // Mark as visited and cleanup
+    -movement(completed, destination_reached);
     +visited(R);
     -target_region(R);
-    -movement(completed, destination_reached);
     .print("Arrived at ", R).
 
 // Handle mapping failure
@@ -112,16 +150,6 @@ godot_name(fence_door_rotate_2, "FenceDoorRotate2").
 agent_base(shopper1, "Shopper1").
 agent_base(shopper2, "Shopper2").
 
-// If all regions visited or unreachable, return to Home Base
-+!auto_explore : not (region(R) & not visited(R) & not unreachable(R)) <-
-    .print("Exploration complete.");
-    .findall(obj(N,R,G), object(N,R,G), MemoryList);
-    .print("Remembered objects: ", MemoryList);
-    .print("Returning to Base before fetch...");
-    !return_home;
-    .print("Exploration complete. Notifying Orchestrator...");
-    .send(orchestrator, tell, exploration_completed).
-
 // Queue-based Fetch Logic
 +!fetch(Item)[source(Sender)] <-
     .print("Received order for ", Item, ". Adding to queue.");
@@ -137,25 +165,27 @@ agent_base(shopper2, "Shopper2").
     -busy;
     !process_queue. // Check for more
 +!process_queue : not busy & not task_queue(_) <- 
-    .print("All tasks in queue completed.").
+    .print("All tasks grabbed. Returning to base...");
+    !return_home;
+    .print("All tasks completed.").
 
-// Sequential Fetch Logic
+// Sequential Fetch Logic — navigate to the region first, then approach the object
 +!perform_fetch(SearchName) : object(Name, Region, _) & .substring(SearchName, Name) & godot_name(Region, _) <-
     .print("Looking for ", SearchName, " - found ", Name, " in ", Region);
-    .print("Walking directly to ", Name, "...");
+    .print("Navigating to region ", Region, " first...");
+    !navigate_to(Region);
+    .print("In region ", Region, ". Walking to ", Name, "...");
     vesna.walk(Name);
     .wait({+movement(completed, destination_reached)}, 120000);
     -movement(completed, destination_reached);
     .print("Reached ", Name, ". Grabbing...");
     vesna.grab(Name);
-    .print("Successfully grabbed ", Name, "!");
-    .print("Returning to Base...");
-    !return_home;
-    .print("Back at Base. Fetch complete.").
+    .print("Successfully grabbed ", Name, "!").
 
-// Shared plan to return to specific home
+// Shared plan to return to specific home — navigate via map to entry, then walk to base marker
 +!return_home : .my_name(Me) & agent_base(Me, BaseNode) <-
    .print("Returning to my specific base: ", BaseNode);
+   !navigate_to(entry);
    vesna.walk(BaseNode);
    .wait({+movement(completed, destination_reached)}, 120000);
    -movement(completed, destination_reached);
@@ -172,7 +202,13 @@ agent_base(shopper2, "Shopper2").
 
 // Fetch failure handler (timeout, navigation error, etc.)
 -!perform_fetch(SearchName) : true <-
-    .print("Failed to fetch ", SearchName, " (timeout or error).").
+    .print("Failed to fetch ", SearchName, " (timeout or error).");
+    -busy.
+
+// Queue failure handler: release busy flag so next tasks can proceed
+-!process_queue : true <-
+    -busy;
+    .print("Queue processing failed, resetting busy flag.").
 
 // Helper: wait for object to become grabbable
 // Case 1: already grabbable
@@ -232,7 +268,6 @@ resolve_region(String, String) :- not godot_name(_, String).
 +perception(object_state, "lost", Name, _, _) 
     : object(Name, Region, _) 
    <- 
-    .print("Lost sight of: ", Name, " (remembered in ", Region, ")");
     -object(Name, _, _);
     +object(Name, Region, false);
     -perception(object_state, "lost", Name, _, _).
@@ -240,13 +275,12 @@ resolve_region(String, String) :- not godot_name(_, String).
 // Fallback lost (unknown object)
 +perception(object_state, "lost", Name, _, _) 
    <- 
-    .print("Lost sight of unknown object: ", Name);
     -perception(object_state, "lost", Name, _, _).
 
 // Deprecated
 +perception(vision, Objects) : true <- -perception(vision, Objects).
 
-// Feedback when receiving info from other agents
+// Info from other agents (silent)
 +object(Name, Region, Grabbable)[source(Sender)]
     : Sender \== self & Sender \== percept
-   <- .print("Received info from ", Sender, ": ", Name, " is in ", Region).
+   <- true.

@@ -172,7 +172,7 @@ func _physics_process(delta: float) -> void:
 			visited_waypoints_count += 1
 			var next_wp = waypoint_queue.pop_front()
 			print("Waypoint ", visited_waypoints_count, "/", total_waypoints_for_target, " reached. Moving to next...")
-			navigator.set_target_position( next_wp.global_position )
+			navigator.set_target_position( snap_to_navmesh(next_wp.global_position) )
 			play_run() # Continuo a correre
 			
 		# Se la coda è vuota, ho finito 
@@ -190,7 +190,10 @@ func _physics_process(delta: float) -> void:
 	elif navigator and not navigator.is_navigation_finished():
 		play_run()
 		var direction = ( navigator.get_next_path_position() - global_position ).normalized()
-		var avoidance_force = get_avoidance_force()
+		# Riduci avoidance quando vicino al target
+		var dist_to_target = global_position.distance_to(navigator.get_final_position())
+		var avoidance_scale = clampf(dist_to_target / 3.0, 0.1, 1.0)
+		var avoidance_force = get_avoidance_force() * avoidance_scale
 		var final_direction = ( direction + avoidance_force ).normalized()
 		rotation.y = atan2( -final_direction.z, final_direction.x )
 		
@@ -247,11 +250,12 @@ func manage( intention : Dictionary ) -> void:
 	if type == 'walk':
 		if data[ 'type' ] == 'goto':
 			var target : String = data[ 'target' ]
+			var walk_mode : String = data.get('mode', 'full')  # "full" or "quick"
 			if data.has( 'id' ):
 				var id : int = data[ 'id' ]
-				walk( target, id )
+				walk( target, id, walk_mode )
 			else:
-				walk( target, -1 )
+				walk( target, -1, walk_mode )
 	# Gestione Interazione
 	elif type == 'interact':
 		if data[ 'type' ] == 'use':
@@ -274,7 +278,7 @@ func _collect_waypoints_recursive(node: Node, queue: Array) -> void:
 		_collect_waypoints_recursive(child, queue)
 
 
-func walk( target, _id ):
+func walk( target, _id, mode := "full" ):
 	var target_region = null
 	# Ricerca destinazione
 	# Prova con i markers
@@ -311,8 +315,10 @@ func walk( target, _id ):
 		# Pulisco la coda precedente
 		waypoint_queue.clear()
 		
-		# Colleziono eventuali waypoint figli (es. Butcher -> Line1 -> WP1...)
-		_collect_waypoints_recursive(target_region, waypoint_queue)
+		# Colleziono waypoint solo in modalità "full" (esplorazione)
+		# In modalità "quick" (transito) vado direttamente al centro
+		if mode == "full":
+			_collect_waypoints_recursive(target_region, waypoint_queue)
 		
 		if not waypoint_queue.is_empty():
 			total_waypoints_for_target = waypoint_queue.size()
@@ -320,20 +326,33 @@ func walk( target, _id ):
 			print("Found ", total_waypoints_for_target, " sub-waypoints for ", target)
 			# Se ci sono waypoint, il primo diventa il target immediato
 			var next_wp = waypoint_queue.pop_front()
-			navigator.set_target_position( next_wp.global_position )
+			var safe_pos = snap_to_navmesh(next_wp.global_position)
+			navigator.set_target_position( safe_pos )
 		else:
 			# Comportamento classico: vado al centro della regione
 			total_waypoints_for_target = 1  # Just the region center
 			visited_waypoints_count = 0
-			navigator.set_target_position( target_region.global_position )
+			var safe_pos = snap_to_navmesh(target_region.global_position)
+			navigator.set_target_position( safe_pos )
 	else:
 		print("walk(): navigator is null, cannot set target.")
 
 	# Aggiornamento stato
 	target_movement = target
 	navigation_active = true  # Enable navigation processing
+
 	play_run()
 	end_communication = false
+
+# Proietta una posizione sul punto più vicino della navmesh
+func snap_to_navmesh(pos: Vector3) -> Vector3:
+	if navigator:
+		var map_rid = navigator.get_navigation_map()
+		var closest = NavigationServer3D.map_get_closest_point(map_rid, pos)
+		if closest.distance_to(pos) > 0.1:
+			print("Target snapped to navmesh: ", pos, " -> ", closest)
+		return closest
+	return pos
 
 func get_obj_from_group( art_name : String, group_name : String ):
 	var group_objs = get_tree().get_nodes_in_group( group_name )

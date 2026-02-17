@@ -1,16 +1,19 @@
 package vesna;
 
-import jason.JasonException;
-import jason.asSemantics.*;
-import jason.asSyntax.*;
-import jason.runtime.RuntimeServicesFactory;
-
-import static jason.asSyntax.ASSyntax.*;
-
 import java.net.URI;
 
-import org.gradle.internal.impldep.org.apache.commons.lang.StringUtils;
 import org.json.JSONObject;
+
+import jason.asSemantics.Agent;
+import jason.asSemantics.InternalAction;
+import jason.asSemantics.Message;
+import jason.asSemantics.Unifier;
+import static jason.asSyntax.ASSyntax.createLiteral;
+import static jason.asSyntax.ASSyntax.createString;
+import static jason.asSyntax.ASSyntax.parseLiteral;
+import jason.asSyntax.Literal;
+import jason.asSyntax.NumberTerm;
+import jason.asSyntax.Term;
 
 // VesnaAgent class extends the Agent class making the agent embodied;
 // It connects to the body using a WebSocket connection;
@@ -96,28 +99,6 @@ public class VesnaAgent extends Agent {
         sense(perception);
     }
 
-    // prende i dati dal sight e li segnalo al mind (obsoleto)
-    private void handle_sight(JSONObject sight) {
-        String object = sight.getString("sight");
-        long id = sight.getLong("id");
-        Literal sight_belief = createLiteral("sight", createLiteral(object), createNumber(id));
-        try {
-            addBel(sight_belief);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    // prende i dati da vision (obsoleto) e li segnala al mind
-    private void handle_perception(JSONObject data) {
-        String type = data.getString("perception_type");
-        if (type.equals("object_state")) {
-            handle_object_state(data);
-        } else {
-            System.out.println("Unknown perception type: " + type);
-        }
-    }
-
     // Elabora eventi object_state (seen/grabbable/lost)
     private void handle_object_state(JSONObject data) {
         String event = data.getString("event");
@@ -139,7 +120,7 @@ public class VesnaAgent extends Agent {
     }
 
     // Questa funzione gestisce i messaggi che arrivano dal body
-    // tipi: signal, sight, perception
+    // tipi: signal
     public void vesna_handle_msg(String msg) {
         // System.out.println("Received message: " + msg);
         JSONObject log = new JSONObject(msg);
@@ -151,11 +132,10 @@ public class VesnaAgent extends Agent {
             case "signal":
                 handle_event(data);
                 break;
-            case "sight":
-                handle_sight(data);
-                break;
             case "perception":
-                handle_perception(data);
+                if (data.getString("perception_type").equals("object_state")) {
+                    handle_object_state(data);
+                }
                 break;
             default:
                 System.out.println("Unknown message type: " + type);
