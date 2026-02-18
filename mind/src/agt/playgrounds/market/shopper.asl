@@ -31,6 +31,9 @@ current_location(entry).
 
 +!explore <-
     .print("Exploration command received!");
+    // Record exploration start time
+    .time(H, M, S);
+    +exploration_start(H, M, S);
     .print("First, I will go to the Entry.");
     !visit(entry);
     .wait(1000);
@@ -61,6 +64,13 @@ current_location(entry).
 
 // Finish exploration: report and return
 +!finish_explore <-
+    // Compute exploration duration
+    .time(H1, M1, S1);
+    ?exploration_start(H0, M0, S0);
+    T0 = H0 * 3600 + M0 * 60 + S0;
+    T1 = H1 * 3600 + M1 * 60 + S1;
+    Duration = T1 - T0;
+    .print("[TIME] Exploration completed in ", Duration, " seconds");
     .findall(obj(N,R,G), object(N,R,G), MemoryList);
     .print("Remembered objects: ", MemoryList);
     .print("Returning to Base before fetch...");
@@ -68,11 +78,9 @@ current_location(entry).
     .print("Exploration complete. Notifying Orchestrator...");
     .send(orchestrator, tell, exploration_completed).
 
-// =============================================
-// NAVIGAZIONE CON PATHFINDING VIA MARKET MAP
-// =============================================
+// NAVIGATION VIA MARKET MAP PATHFINDING
 
-// navigate_to(Dest): trova il percorso da current_location a Dest e lo segue tappa per tappa
+// navigate_to(Dest): find path from current_location to Dest and follow it step by step
 +!navigate_to(Dest) : current_location(Dest) <-
     .print("Already at ", Dest, ", no movement needed.").
 
@@ -94,7 +102,7 @@ current_location(entry).
     -current_location(_);
     +current_location(Dest).
 
-// follow_market_path: cammina tappa per tappa in modalità "quick" (transito rapido)
+// follow_market_path: walk step by step in "quick" mode (fast transit, center only)
 +!follow_market_path([]) <-
     .print("Path navigation complete.").
 
@@ -112,14 +120,12 @@ current_location(entry).
     .print("Failed to reach ", Next, " (timeout on path step). Aborting path.");
     .fail.
 
-// =============================================
-// VISIT: usa navigate_to
-// =============================================
+// VISIT: uses navigate_to
 +!visit(R) : godot_name(R, GName) <-
     +target_region(R);
     .print("Visiting ", R, " via map navigation...");
     !navigate_to(R);
-    // Esplorazione completa: cammina per TUTTI i waypoint della regione
+    // Full exploration: walk through ALL waypoints in the region
     .print("Exploring all waypoints in ", R, "...");
     vesna.walk(GName);
     .wait({+movement(completed, destination_reached)}, 120000);
@@ -173,6 +179,7 @@ agent_base(shopper2, "Shopper2").
 
 // Sequential Fetch Logic — navigate to the region first, then approach the object
 +!perform_fetch(SearchName) : object(Name, Region, _) & .substring(SearchName, Name) & godot_name(Region, _) <-
+    .time(FH0, FM0, FS0);
     .print("Looking for ", SearchName, " - found ", Name, " in ", Region);
     .print("Navigating to region ", Region, " first...");
     !navigate_to(Region);
@@ -182,7 +189,12 @@ agent_base(shopper2, "Shopper2").
     -movement(completed, destination_reached);
     .print("Reached ", Name, ". Grabbing...");
     vesna.grab(Name);
-    .print("Successfully grabbed ", Name, "!").
+    // Compute fetch duration
+    .time(FH1, FM1, FS1);
+    FT0 = FH0 * 3600 + FM0 * 60 + FS0;
+    FT1 = FH1 * 3600 + FM1 * 60 + FS1;
+    FDuration = FT1 - FT0;
+    .print("[TIME] Fetched ", Name, " in ", FDuration, " seconds").
 
 // Shared plan to return to specific home — navigate via map to entry, then walk to base marker
 +!return_home : .my_name(Me) & agent_base(Me, BaseNode) <-

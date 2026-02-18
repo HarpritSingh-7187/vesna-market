@@ -1,5 +1,5 @@
 // Orchestrator Agent
-// Responsabilità: Coordinare Shoppers e gestire la Shopping List
+// Coordinates Shoppers and manages the Shopping List
 
 /* Initial Beliefs */
 !start.
@@ -55,6 +55,15 @@
     .length(IdleAgents, NI);
     .length(AllAgents, NA);
     if (NI == NA) {
+        // Compute order fulfillment time
+        if (order_start(OH, OM, OS)) {
+            .time(OH1, OM1, OS1);
+            OT0 = OH * 3600 + OM * 60 + OS;
+            OT1 = OH1 * 3600 + OM1 * 60 + OS1;
+            ODuration = OT1 - OT0;
+            .print("[TIME] Order fulfilled in ", ODuration, " seconds");
+            -order_start(OH, OM, OS);
+        }
         !check_pending_orders;
     }.
 
@@ -85,6 +94,9 @@
     .print("=== DISPATCHING QUEUED ORDER ===");
     .print("Order: ", List);
     -pending_order(List);
+    // Record order start time
+    .time(H, M, S);
+    +order_start(H, M, S);
     .findall(A, idle(A), Agents);
     for (.member(A, Agents)) { -idle(A); }
     !dispatch(List, Agents).
