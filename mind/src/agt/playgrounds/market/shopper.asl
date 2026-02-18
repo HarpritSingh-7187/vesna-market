@@ -279,9 +279,6 @@ resolve_region(String, String) :- not godot_name(_, String).
    <- 
     -perception(object_state, "lost", Name, _, _).
 
-// Deprecated
-+perception(vision, Objects) : true <- -perception(vision, Objects).
-
 // Info from other agents (silent)
 +object(Name, Region, Grabbable)[source(Sender)]
     : Sender \== self & Sender \== percept

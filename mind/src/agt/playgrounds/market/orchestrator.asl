@@ -2,8 +2,6 @@
 // Responsabilità: Coordinare Shoppers e gestire la Shopping List
 
 /* Initial Beliefs */
-shopping_list(["Watermelon", "Cheese3","Ketchup", "Musterd", "Croissant", "MeatPatty"]).
-
 !start.
 
 
@@ -27,14 +25,11 @@ shopping_list(["Watermelon", "Cheese3","Ketchup", "Musterd", "Croissant", "MeatP
 // React to exploration completion
 +exploration_completed[source(Agent)] <-
     .print("Received exploration completion signal from ", Agent);
-    !assign_orders.
-
-//Dynamic Round-Robin Assignment
-+!assign_orders : shopping_list(List) <-
-    .findall(Agent, available(Agent), Agents); // Refresh list (in case new agents joined)
-    .print("Processing Shopping List: ", List);
-    .print("Available Workforce: ", Agents);
-    !dispatch(List, Agents). // Dispatch to discovered agents
+    +exploration_done;
+    // All agents are now idle (exploration is done, no orders dispatched yet)
+    .findall(A, available(A), AllAgents);
+    for (.member(A, AllAgents)) { +idle(A); }
+    !check_pending_orders.
 
 // Base Case: No more items
 +!dispatch([], _) <- 
@@ -53,5 +48,46 @@ shopping_list(["Watermelon", "Cheese3","Ketchup", "Musterd", "Croissant", "MeatP
 // React to task completion from shoppers
 +tasks_completed(Agent)[source(Agent)] <-
     .print("Agent ", Agent, " has completed all assigned tasks. Now idle.");
-    +idle(Agent).
+    +idle(Agent);
+    // Check if all agents are idle → trigger pending orders
+    .findall(A, idle(A), IdleAgents);
+    .findall(A, available(A), AllAgents);
+    .length(IdleAgents, NI);
+    .length(AllAgents, NA);
+    if (NI == NA) {
+        !check_pending_orders;
+    }.
 
+// Receive a new order from customer agent
++!new_order(List) <-
+    .print("=== NEW SHOPPING LIST ORDER RECEIVED ===");
+    .print("Order: ", List);
+    if (exploration_done) {
+        // Exploration complete — check for idle agents
+        .findall(A, idle(A), IdleAgents);
+        .length(IdleAgents, NI);
+        if (NI > 0) {
+            for (.member(A, IdleAgents)) { -idle(A); }
+            !dispatch(List, IdleAgents);
+        } else {
+            // All agents busy — queue for later
+            .print("All agents busy. Queuing order for later...");
+            +pending_order(List);
+        }
+    } else {
+        // Exploration not done yet — queue the order
+        .print("Exploration not complete yet. Queuing order...");
+        +pending_order(List);
+    }.
+
+// Check for queued orders when all agents are idle
++!check_pending_orders : pending_order(List) <-
+    .print("=== DISPATCHING QUEUED ORDER ===");
+    .print("Order: ", List);
+    -pending_order(List);
+    .findall(A, idle(A), Agents);
+    for (.member(A, Agents)) { -idle(A); }
+    !dispatch(List, Agents).
+
++!check_pending_orders : not pending_order(_) <-
+    .print("All orders fulfilled. System idle.").

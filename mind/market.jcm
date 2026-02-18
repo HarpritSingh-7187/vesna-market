@@ -1,9 +1,9 @@
 mas market {
 
-    // Orchestrator: Agente logico, coordinatore centrale
+    // Orchestrator: Logic agent, central coordinator
     agent orchestrator:playgrounds/market/orchestrator.asl {
         beliefs: address("localhost")
-                 port(9082) // Porta Jason fittizia (non usata per weosocket Godot)
+                 port(9082) // Fake Jason port (not used for websocket Godot)
     }
 
     // Shopper 1
@@ -20,6 +20,10 @@ mas market {
                     port(9081) 
         goals:      start
         ag-class:   vesna.VesnaAgent
+    }
+
+    // Customer: External agent that sends Shopping List orders (without Godot body)
+    agent customer:playgrounds/market/customer.asl {
     }
 
 }
