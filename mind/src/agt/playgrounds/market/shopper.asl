@@ -40,6 +40,17 @@ current_location(entry).
     ?explore_order(Route);
     !auto_explore(Route).
 
+// Parallel exploration: explore only assigned regions
++!explore_zone(RegionList) <-
+    .print("Exploration zone received: ", RegionList);
+    // Record exploration start time
+    .time(H, M, S);
+    +exploration_start(H, M, S);
+    .print("Going to Entry first...");
+    !visit(entry);
+    .wait(1000);
+    !auto_explore(RegionList).
+
 +!start : started <- .print("Shopper agent already started.").
 
 // Follow topological route: visit each shoppable region in physical order
@@ -150,8 +161,6 @@ current_location(entry).
     -target_region(R);
     -movement(failed, Reason).
 
-
-
 // Mapping agents to their home markers
 agent_base(shopper1, "Shopper1").
 agent_base(shopper2, "Shopper2").
@@ -163,6 +172,7 @@ agent_base(shopper2, "Shopper2").
     !process_queue.
 
 +!process_queue : busy <- true. // Already working, do nothing
+
 +!process_queue : not busy & task_queue(Item) <-
     +busy;
     .print("Processing next task: ", Item);
@@ -170,6 +180,7 @@ agent_base(shopper2, "Shopper2").
     -task_queue(Item);
     -busy;
     !process_queue. // Check for more
+
 +!process_queue : not busy & not task_queue(_) <- 
     .print("All tasks grabbed. Returning to base...");
     !return_home;
@@ -223,38 +234,6 @@ agent_base(shopper2, "Shopper2").
 -!process_queue : true <-
     -busy;
     .print("Queue processing failed, resetting busy flag.").
-
-// Helper: wait for object to become grabbable
-// Case 1: already grabbable
-+!wait_grabbable(Name, Region) : object(Name, Region, true) <-
-    .print(Name, " is already within grab range.").
-
-// Case 2: not yet grabbable -> approach the object, then re-check
-+!wait_grabbable(Name, Region) : object(Name, Region, false) <-
-    .print(Name, " not in grab range. Approaching...");
-    vesna.walk(Name);
-    .wait({+movement(completed, destination_reached)}, 60000);
-    -movement(completed, destination_reached);
-    .print("Approached ", Name, ".");
-    !check_grabbable(Name, Region).
-
-// After approach: already grabbable (event fired during walk)
-+!check_grabbable(Name, Region) : object(Name, Region, true) <-
-    .print(Name, " is now within grab range.").
-
-// After approach: not yet grabbable -> wait for perception
-+!check_grabbable(Name, Region) : object(Name, Region, false) <-
-    .print("Waiting for ", Name, " to become grabbable...");
-    .wait({+object(Name, Region, true)}, 15000).
-
-// Case 3: failure (timeout)
--!wait_grabbable(Name, Region) : true <-
-    .print("Timeout waiting for ", Name, " to become grabbable.");
-    .fail.
-
--!check_grabbable(Name, Region) : true <-
-    .print("Timeout on check_grabbable for ", Name, ".");
-    .fail.
 
 
 // Perception Handling (object_state)

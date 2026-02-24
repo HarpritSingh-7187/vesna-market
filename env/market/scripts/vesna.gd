@@ -195,7 +195,7 @@ func _physics_process(delta: float) -> void:
 		var avoidance_scale = clampf(dist_to_target / 3.0, 0.1, 1.0)
 		var avoidance_force = get_avoidance_force() * avoidance_scale
 		var final_direction = ( direction + avoidance_force ).normalized()
-		rotation.y = atan2( -final_direction.z, final_direction.x )
+		rotation.y = atan2( final_direction.x, final_direction.z )
 		
 		velocity = velocity.lerp( final_direction * SPEED, ACCELERATION * delta )
 	
@@ -470,9 +470,9 @@ func _setup_field_of_view() -> void:
 	collision_shape.shape = shape
 	field_of_view.add_child(collision_shape)
 	
-	# Posizionamento cono in avanti (+X)
-	collision_shape.position.x = vision_range / 2.0
-	collision_shape.rotation.z = deg_to_rad(-90)
+	# Position cone forward (-Z, Godot's forward direction)
+	collision_shape.position.z = -vision_range / 2.0
+	collision_shape.rotation.x = deg_to_rad(90)
 	
 	field_of_view.body_entered.connect(_on_field_of_view_body_entered)
 	field_of_view.body_exited.connect(_on_field_of_view_body_exited)
@@ -617,5 +617,5 @@ func _setup_vision_debug_mesh():
 	# Posizionamento nella Scena
 	add_child(vision_cone_mesh)
 	
-	vision_cone_mesh.position.x = vision_range / 2.0
-	vision_cone_mesh.rotation.z = deg_to_rad(-90)
+	vision_cone_mesh.position.z = -vision_range / 2.0
+	vision_cone_mesh.rotation.x = deg_to_rad(90)

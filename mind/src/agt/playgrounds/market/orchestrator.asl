@@ -1,37 +1,67 @@
 // Orchestrator Agent
 // Coordinates Shoppers and manages the Shopping List
 
-/* Initial Beliefs */
-!start.
+{ include("playgrounds/market/market_map.asl") }
 
+/* Initial Beliefs */
+
+// Exploration zones: predefined region splits for parallel exploration
+exploration_zone(1, [fv, breads, drinks, bakery]).
+exploration_zone(2, [dairy, fish, sauces, butcher]).
+
+!start.
 
 +!start <-
     .print("Orchestrator online. Waiting for agents to register...");
     
-    // Wait until at least one agent is available
+    // Wait for agents to register
     .wait({+available(A)}, 5000);
+    .wait(2000);
     
-    // Get all currently available agents
+    // Get all registered agents
     .findall(Agent, available(Agent), Agents);
-    .print("Registered agents: ", Agents);
+    .length(Agents, NA);
+    .print("Registered agents: ", Agents, " (", NA, " total)");
     
-    // Assign Exploration to the first available agent
-    .nth(0, Agents, Explorer);
-    .print("Assigning Exploration task to ", Explorer, "...");
-    .send(Explorer, achieve, explore);
+    +expected_explorers(NA);
+    +explorers_done(0);
+    
+    !assign_zones(Agents, 1);
+    .print("Parallel exploration started with ", NA, " agents.").
 
-    .print("Exploration started. Waiting for completion signal...").
++!assign_zones([], _) <- .print("All exploration zones assigned.").
 
-// React to exploration completion
++!assign_zones([Agent|Rest], ZoneId) : exploration_zone(ZoneId, Regions) <-
+    .print("Assigning zone ", ZoneId, " to ", Agent, ": ", Regions);
+    .send(Agent, achieve, explore_zone(Regions));
+    NextZone = ZoneId + 1;
+    !assign_zones(Rest, NextZone).
+
+// Fallback: more agents than zones — extra agents wait
++!assign_zones([Agent|Rest], ZoneId) : not exploration_zone(ZoneId, _) <-
+    .print("No more zones to assign. ", Agent, " will wait for orders.");
+    // Decrement expected explorers
+    ?expected_explorers(E); -expected_explorers(E); E1 = E - 1; +expected_explorers(E1);
+    !assign_zones(Rest, ZoneId).
+
+// React to exploration completion — count signals from all agents
 +exploration_completed[source(Agent)] <-
     .print("Received exploration completion signal from ", Agent);
-    +exploration_done;
-    // All agents are now idle (exploration is done, no orders dispatched yet)
-    .findall(A, available(A), AllAgents);
-    for (.member(A, AllAgents)) { +idle(A); }
-    !check_pending_orders.
+    ?explorers_done(N);
+    -explorers_done(N);
+    N1 = N + 1;
+    +explorers_done(N1);
+    ?expected_explorers(Total);
+    .print("Exploration progress: ", N1, "/", Total);
+    if (N1 == Total) {
+        .print("=== ALL AGENTS COMPLETED EXPLORATION ===");
+        +exploration_done;
+        .findall(A, available(A), AllAgents);
+        for (.member(A, AllAgents)) { +idle(A); }
+        !check_pending_orders;
+    }.
 
-// Base Case: No more items
+// Base Case: No items left
 +!dispatch([], _) <- 
     .print("All orders assigned.").
 
@@ -42,14 +72,14 @@
     
     // Rotate agents
     .concat(OtherAgents, [Agent], NextAgents);
-    
+
     !dispatch(Rest, NextAgents).
 
 // React to task completion from shoppers
 +tasks_completed(Agent)[source(Agent)] <-
     .print("Agent ", Agent, " has completed all assigned tasks. Now idle.");
     +idle(Agent);
-    // Check if all agents are idle → trigger pending orders
+    // Check if all agents are idle
     .findall(A, idle(A), IdleAgents);
     .findall(A, available(A), AllAgents);
     .length(IdleAgents, NI);
@@ -64,6 +94,7 @@
             .print("[TIME] Order fulfilled in ", ODuration, " seconds");
             -order_start(OH, OM, OS);
         }
+        // Trigger pending orders
         !check_pending_orders;
     }.
 
