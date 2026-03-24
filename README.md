@@ -1,8 +1,43 @@
 # VEsNA-light
 
-VEsNA is a framework that enables JaCaMo agents to be embodied inside a virtual environment. This repository contains the bridge between agent minds and agent bodies.
+VEsNA is a framework that enables [JaCaMo](https://jacamo-lang.github.io/) agents to be embodied inside a virtual environment powered by [Godot 4](https://godotengine.org/). This repository contains the bridge between agent minds and agent bodies, along with two fully working playground environments (Office and Market).
 
 ![](./docs/vesna.gif)
+
+## Project Structure
+
+```
+vesna-light/
+├── mind/                         # JaCaMo agent-side (Java + AgentSpeak)
+│   ├── build.gradle              # Gradle build (Java 23, JaCaMo 1.2)
+│   ├── vesna.jcm                 # Office playground MAS config
+│   ├── market.jcm                # Market playground MAS config
+│   └── src/
+│       ├── agt/
+│       │   ├── vesna.asl              # Core VEsNA plans (go_to, follow_path, RCC reasoning)
+│       │   ├── vesna/                 # Java internal actions & agent class
+│       │   │   ├── VesnaAgent.java    # Embodied agent (WebSocket client)
+│       │   │   ├── WsClient.java      # WebSocket client
+│       │   │   ├── grab.java          # Grab action
+│       │   │   ├── release.java       # Release action
+│       │   │   └── via/               # Movement actions
+│       │   │       ├── walk.java
+│       │   │       ├── rotate.java
+│       │   │       └── jump.java
+│       │   └── playgrounds/
+│       │       ├── office/            # Office scenario agents & map
+│       │       └── market/            # Market scenario agents & map
+│       └── env/
+│           ├── vesna/                 # Base artifact classes
+│           │   ├── SituatedArtifact.java
+│           │   └── GrabbableArtifact.java
+│           └── playgrounds/office/    # Office-specific artifacts
+│               ├── CoffeeMachine.java
+│               └── Cup.java
+└── env/                          # Godot body-side
+    ├── office/                   # Office Godot project
+    └── market/                   # Market Godot project
+```
 
 ## Usage
 
@@ -10,14 +45,19 @@ VEsNA is a framework that enables JaCaMo agents to be embodied inside a virtual 
 >
 > **Requirements**
 >
-> - Java  23 (if you change version remember to change it in the `build.gradle` file);
-> - Gradle (tested with version 8);
+> - Java 23 (if you change version, update `build.gradle`);
+> - Gradle (tested with version 8+);
 > - Godot 4.
+>
+> Java dependencies (JaCaMo 1.2, Java-WebSocket, JSON) are managed automatically by Gradle.
 
 The framework provides:
 
-- a total new set of actions for spatial reasoning;
-- a fully working playground environment implemented in Godot.
+- a set of **internal actions** for spatial reasoning and movement (`walk`, `rotate`, `jump`, `grab`, `release`);
+- a **perception system** that delivers visual events from the body to the mind (`object_state`);
+- **Region Connection Calculus (RCC)** reasoning with automatic pathfinding;
+- **CArtAgO artifacts** for object interaction (`SituatedArtifact`, `GrabbableArtifact`);
+- two fully working **playground environments**: Office and Market.
 
 ### Making a VEsNA agent on JaCaMo
 
@@ -35,106 +75,265 @@ mas your_mas {
 }
 ```
 
-The new Agent class `VesnaAgent` creates a connection between each agent and its body. The body implements a server with an address and a port, the agent should place these two data inside the beliefs.
+The new Agent class `VesnaAgent` creates a WebSocket connection between each agent and its body. The body implements a WebSocket server with an address and a port; the agent must include these two values as beliefs.
 
-Inside your agent file you should include the `vesna.asl` file and, if you want, the playground files:
+Inside your agent file you should include the `vesna.asl` file and, if you want, the playground-specific files:
 
 ```
-include{ ( "vesna.asl" ) }
-include{ ( "playgrounds/office.asl" ) }
+{ include("vesna.asl") }
+{ include("playgrounds/office.asl") }
 ```
 
-The vesna file provides plans:
+The `vesna.asl` file provides high-level plans:
 
-- `go_to( Target )`: makes the agent move to the target;
-- `follow_path( [ Path ] )`: makes the agent follow a path.
+- `go_to( Target )`: makes the agent navigate to the target using RCC reasoning;
+- `follow_path( [ Path ] )`: makes the agent follow a sequence of waypoints.
 
 These plans make the agent reason with Region Connection Calculus (RCC). A map of the environment in RCC is given in the playground folder.
 
-Additionally, the vesna agent has three new `DefaultInternalAction`s:
+### Internal Actions
 
-- `vesna.walk()`: can be used with different parameters.
-  - without parameters: makes a step;
-  - with a number `n`: makes a step of length n;
-  - with a literal `target`: moves to the target;
-  - with a literal `target` and a number `id`: moves to the target with id.
-- `vesna.rotate()`: can be used with different parameters.
-  - with a direction (`left`, `right`, `backward`, `forward`) to rotate in that direction;
-  - with a literal `target` to look at target;
-  - with a literal `target` and an `id` to look at target with id.
-- `vesna.jump()`: makes a jump.
+The VEsNA agent has the following `DefaultInternalAction`s:
+
+#### `vesna.walk()`
+
+Can be used with different parameters:
+
+| Signature | Description |
+|---|---|
+| `vesna.walk()` | Makes a step |
+| `vesna.walk( n )` | Makes a step of length `n` |
+| `vesna.walk( target )` | Moves to target (full waypoint traversal) |
+| `vesna.walk( target, id )` | Moves to target with `id` |
+| `vesna.walk( target, "quick" )` | Moves to target center only (no waypoint traversal) |
+
+#### `vesna.rotate()`
+
+| Signature | Description |
+|---|---|
+| `vesna.rotate( direction )` | Rotates in a direction (`left`, `right`, `backward`, `forward`) |
+| `vesna.rotate( target )` | Looks at target |
+| `vesna.rotate( target, id )` | Looks at target with `id` |
+
+#### `vesna.jump()`
+
+Makes the agent jump (no parameters).
+
+#### `vesna.grab( artifact_name )`
+
+Grabs a named artifact in the environment. Sends an `interact` message of type `grab` to the body.
+
+#### `vesna.release( artifact_name )`
+
+Releases a previously grabbed artifact. Sends an `interact` message of type `release` to the body.
+
+---
+
+### CArtAgO Artifacts
+
+VEsNA provides two base artifact classes for creating interactive objects in the environment:
+
+- **`SituatedArtifact`**: an artifact placed in a specific region, with a usage limit. Provides `use( region )` and `free()` operations.
+- **`GrabbableArtifact`**: an artifact that can be grabbed and carried by an agent. Provides `grab( region )` and `release( region )` operations.
+
+Both artifacts enforce region checks (the agent must be in the same region of the artifact) and forward interaction messages to the Godot body.
+
+---
 
 ### Making the VEsNA agent body
 
-To implement your VEsNA body you should implement a websocket Server. The server will receive these messages:
+To implement your VEsNA body you should implement a WebSocket server. The server communicates with the mind via JSON messages.
+
+#### Mind → Body messages
 
 ```json
 {
-    sender: "ag_name",
-    receiver: "body",
-    type: "msg_type",
-    data: {
-        type: "inner_type",
+    "sender": "ag_name",
+    "receiver": "body",
+    "type": "msg_type",
+    "data": {
+        "type": "inner_type",
         ...
     }
 }
 ```
 
-The `sender` is set to the agent name in the mas. `msg_type` can be `walk`, `rotate` or `jump`. The `inner_type` is the inner type of the action.
+The `sender` is set to the agent name in the MAS. `msg_type` can be `walk`, `rotate`, `jump` or `interact`.
+
+##### Walk message data
+
+A walk message can have type `goto` or `step`.
+
+`goto`:
+```json
+{
+    "type": "goto",
+    "target": "target",
+    "mode": "full",
+    "id": 0
+}
+```
+- `mode`: `"full"` (default, traverses all waypoints) or `"quick"` (center only).
+- `id`: optional.
+
+`step`:
+```json
+{
+    "type": "step",
+    "length": 2
+}
+```
+- `length`: optional.
+
+##### Rotate message data
+
+A rotate message can have type `direction` or `lookat`.
+
+`direction`:
+```json
+{
+    "type": "direction",
+    "direction": "left"
+}
+```
+
+`lookat`:
+```json
+{
+    "type": "lookat",
+    "target": "target",
+    "id": 0
+}
+```
+- `id`: optional.
+
+##### Interact message data
+
+An interact message can have type `grab`, `release`, `use` or `free`.
+
+```json
+{
+    "type": "grab",
+    "art_name": "artifact_name"
+}
+```
 
 Jump action has an empty data field.
 
-#### Walk message data
+#### Body → Mind messages
 
-A walk message can have two types: `goto` or `step`.
+The body sends messages back to the mind. `VesnaAgent` handles two types:
 
-The data field for `goto` is:
-
-```json
-{
- 	type: "goto",
-    target: "target",
-    id: 0 [optional]
-}
-```
-
-The data field for `step` is:
-
-``` json
-{
-    type: "step",
-    length: 2 [optional]
-}
-```
-
-#### Rotate message data
-
-A rotate message can have two types: `direction` or `lookat`.
-
-The data field for `direction` is:
+##### Signal (movement events)
 
 ```json
 {
-    type: "direction",
-    direction: "left"
+    "sender": "body",
+    "receiver": "ag_name",
+    "type": "signal",
+    "data": {
+        "type": "movement",
+        "status": "completed",
+        "reason": "destination_reached"
+    }
 }
 ```
 
-The data field for `lookat` is:
+These generate beliefs like `movement( completed, destination_reached )` in the agent.
 
-``` json
+##### Perception (object state)
+
+```json
 {
-    type: "lookat",
-    target: "target",
-    id: 0 [optional]
+    "sender": "body",
+    "receiver": "ag_name",
+    "type": "perception",
+    "data": {
+        "perception_type": "object_state",
+        "event": "seen",
+        "object": {
+            "name": "object_name",
+            "reparto": "region_name",
+            "grabbable": true
+        }
+    }
 }
 ```
 
-### Try the playground
+Events: `seen`, `grabbable`, `not_grabbable`, `lost`.
 
-In order to try the playground, you should:
+These generate beliefs like `perception( object_state, Event, Name, Region, Grabbable )` in the agent.
 
-1. open Godot and import the playground you want;
-2. start the main scene;
-3. go in the mind folder;
-4. launch the project (with `gradle run`).
+---
+
+### Playgrounds
+
+#### Office
+
+The Office playground features **4 agents** (alice, bob, charlie, david) navigating an office environment with shared artifacts (CoffeeMachine with a capacity of 1, and 3 Cups).
+
+Config file: `vesna.jcm`
+
+```
+mas vesna {
+    agent alice:alice.asl {
+        beliefs: address( localhost ) port( 9081 )
+        ag-class: vesna.VesnaAgent
+    }
+    // bob (9080), charlie (9082), david (9083)
+    
+    workspace wp {
+        artifact coffee_machine: vesna.playgrounds.office.CoffeeMachine( "common", 1 )
+        artifact cup1: vesna.playgrounds.office.Cup( "common" )
+        // ...
+    }
+}
+```
+
+#### Market
+
+The Market playground implements a **multi-agent supermarket shopping** scenario with:
+
+- **Orchestrator**: a logic agent (no Godot body) that coordinates shoppers, assigns exploration zones, and dispatches shopping list orders;
+- **Shoppers** (shopper1, shopper2): embodied agents that explore the market in parallel, build object memory via visual perception, and fetch items on demand;
+- **Customer**: a logic agent that sends shopping list orders to the orchestrator.
+
+Config file: `market.jcm`
+
+```
+mas market {
+
+    // Orchestrator: Logic agent, central coordinator
+    agent orchestrator:playgrounds/market/orchestrator.asl {
+        beliefs: address("localhost")
+                 port(9082) // Fake Jason port (not used for websocket Godot)
+    }
+
+    // Shopper 1
+    agent shopper1:playgrounds/market/shopper.asl {
+        beliefs:    address( localhost )
+                    port(9080) 
+        goals:      start
+        ag-class:   vesna.VesnaAgent
+    }
+
+    // Shopper 2
+    agent shopper2:playgrounds/market/shopper.asl {
+        beliefs:    address( localhost )
+                    port(9081) 
+        goals:      start
+        ag-class:   vesna.VesnaAgent
+    }
+
+    // Customer: External agent that sends Shopping List orders (without Godot body)
+    agent customer:playgrounds/market/customer.asl {
+    }
+```
+
+#### Running a playground
+
+1. Open Godot and import the playground you want (from `env/office/` or `env/market/`);
+2. Start the main scene;
+3. Go in the `mind/` folder;
+4. To run the **Market** (default): `gradle run`;
+5. To run the **Office**: change `args 'market.jcm'` to `args 'vesna.jcm'` in `build.gradle`, then `gradle run`.
