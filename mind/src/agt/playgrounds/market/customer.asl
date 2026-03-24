@@ -10,6 +10,7 @@
     .send(orchestrator, achieve, new_order(["Watermelon", "Cheese3", "Ketchup", "Musterd", "Croissant", "MeatPatty"]));
 
     // Second order: placed after first batch is likely completed
-    .wait(120000);
+    //.wait(120000); //If single agent
+    .wait(60000);
     .print("Placing second Shopping List order!");
     .send(orchestrator, achieve, new_order(["SodaBottle", "Loaf", "Apple", "CakeBirthday"])).

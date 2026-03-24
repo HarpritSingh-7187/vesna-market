@@ -9,6 +9,9 @@
 exploration_zone(1, [fv, breads, drinks, bakery]).
 exploration_zone(2, [dairy, fish, sauces, butcher]).
 
+//For single agent 
+//exploration_zone(1, [fv, breads, drinks, bakery, dairy, fish, sauces, butcher]).  
+
 !start.
 
 +!start <-
@@ -78,6 +81,7 @@ exploration_zone(2, [dairy, fish, sauces, butcher]).
 // React to task completion from shoppers
 +tasks_completed(Agent)[source(Agent)] <-
     .print("Agent ", Agent, " has completed all assigned tasks. Now idle.");
+    -tasks_completed(Agent)[source(Agent)];
     +idle(Agent);
     // Check if all agents are idle
     .findall(A, idle(A), IdleAgents);
