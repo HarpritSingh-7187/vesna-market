@@ -1,13 +1,27 @@
-# VEsNA-light
+# VEsNA-Market
 
-VEsNA is a framework that enables [JaCaMo](https://jacamo-lang.github.io/) agents to be embodied inside a virtual environment powered by [Godot 4](https://godotengine.org/). This repository contains the bridge between agent minds and agent bodies, along with two fully working playground environments (Office and Market).
+VEsNA is a framework that enables [JaCaMo](https://jacamo-lang.github.io/) agents to be embodied inside a virtual environment powered by [Godot 4](https://godotengine.org/). This repository focuses on the **Market** playground — a multi-agent supermarket shopping scenario — and contains the full bridge between agent minds and agent bodies.
 
 ![](./docs/vesna.gif)
+
+## Quick Start
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/<your-username>/vesna-market.git
+   cd vesna-market
+   ```
+2. **Open the Godot project:** launch [Godot 4](https://godotengine.org/download/) and import the Market project from `env/market/`. Press **Play** to start the scene.
+3. **Run the agents:** in a separate terminal, navigate to `mind/` and run:
+   ```bash
+   gradle run
+   ```
+4. The agents will connect to the Godot bodies via WebSocket and begin acting in the environment.
 
 ## Project Structure
 
 ```
-vesna-light/
+vesna-market/
 ├── mind/                         # JaCaMo agent-side (Java + AgentSpeak)
 │   ├── build.gradle              # Gradle build (Java 23, JaCaMo 1.2)
 │   ├── vesna.jcm                 # Office playground MAS config
@@ -57,7 +71,7 @@ The framework provides:
 - a **perception system** that delivers visual events from the body to the mind (`object_state`);
 - **Region Connection Calculus (RCC)** reasoning with automatic pathfinding;
 - **CArtAgO artifacts** for object interaction (`SituatedArtifact`, `GrabbableArtifact`);
-- two fully working **playground environments**: Office and Market.
+- a fully working **Market playground** demonstrating multi-agent supermarket shopping.
 
 ### Making a VEsNA agent on JaCaMo
 
@@ -270,6 +284,10 @@ These generate beliefs like `perception( object_state, Event, Name, Region, Grab
 
 #### Office
 
+> [!WARNING]
+>
+> The Office playground is included in the repository as a **reference example** from the original VEsNA framework. It is **not configured for out-of-the-box use** in this repo and may require adaptation (e.g. Godot scene setup, agent configuration) to run correctly.
+
 The Office playground features **4 agents** (alice, bob, charlie, david) navigating an office environment with shared artifacts (CoffeeMachine with a capacity of 1, and 3 Cups).
 
 Config file: `vesna.jcm`
@@ -332,8 +350,17 @@ mas market {
 
 #### Running a playground
 
-1. Open Godot and import the playground you want (from `env/office/` or `env/market/`);
-2. Start the main scene;
-3. Go in the `mind/` folder;
-4. To run the **Market** (default): `gradle run`;
-5. To run the **Office**: change `args 'market.jcm'` to `args 'vesna.jcm'` in `build.gradle`, then `gradle run`.
+> [!IMPORTANT]
+>
+> Make sure you have all the [requirements](#usage) installed before proceeding.
+
+1. **Start the Godot scene first.** Open Godot 4, import the Market project from `env/market/`, and press **Play** (or `F5`) to start the main scene. The WebSocket servers will begin listening for agent connections.
+2. **Then start the agents.** Open a terminal in the `mind/` folder and run:
+   ```bash
+   gradle run
+   ```
+3. The agents will automatically connect to their Godot bodies and start executing their plans.
+
+> [!TIP]
+>
+> Always start Godot **before** Gradle. The agents try to open a WebSocket connection on startup; if the Godot scene is not running yet, the connection will fail.

@@ -28,7 +28,7 @@ task run (type: JavaExec, dependsOn: 'classes') {
     description 'runs the application'
     group ' JaCaMo'
     main = 'jacamo.infra.JaCaMoLauncher'
-    args 'market.jcm'
+    args project.hasProperty('args') ? project.property('args') : 'market.jcm'
     classpath sourceSets.main.runtimeClasspath
 }
 
