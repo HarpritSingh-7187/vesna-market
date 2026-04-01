@@ -2,7 +2,7 @@
 
 VEsNA is a framework that enables [JaCaMo](https://jacamo-lang.github.io/) agents to be embodied inside a virtual environment powered by [Godot 4](https://godotengine.org/). This repository focuses on the **Market** playground — a multi-agent supermarket shopping scenario — and contains the full bridge between agent minds and agent bodies.
 
-![](./docs/vesna.gif)
+![](./docs/Vesna-Market_Display.png)
 
 ## Quick Start
 
